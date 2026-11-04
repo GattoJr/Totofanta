@@ -827,7 +827,7 @@ function vStandings(L){
     :rows.map(r=>({nick:r.nick,uid:r.uid,pts:r.total,pos:r.pos}));
   if(dayR)podList.forEach((d,i)=>{const p=podList[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
   const podium=scored.length&&podList.length>=2?`<div class="podium">${[1,0,2].filter(i=>podList[i]).map(i=>{const x=podList[i];return `<div class="pod p${i+1}${x.uid===S.uid?" me":""}"><span class="pav">${esc((x.nick.trim()[0]||"?").toUpperCase())}</span><span class="pnick">${esc(x.nick)}</span><span class="ppts">${f2(x.pts)}</span><span class="pbase">${x.pos}</span></div>`}).join("")}</div>`:"";
-  let html=`<section class="rkhero"><span class="eyebrow">Classifica${dayR?` · ${dayR.n}ª giornata`:""}</span><h2 class="disp rkname">${esc(L.name)}</h2><span class="rkmeta">${approved().length} giocator${approved().length===1?"e":"i"} · ${lastN?`aggiornata alla ${lastN}ª giornata`:`si parte dalla ${L.startRound}ª giornata`}</span>${podium}</section>`;
+  let html=`<section class="rkhero"><span class="eyebrow">Classifica${dayR?` · ${dayR.n}ª giornata`:""}</span><h2 class="disp rkname">${esc(L.name)}</h2>${podium}</section>`;
   if(scored.length)html+=`<div class="rounds" role="group" aria-label="Tipo di classifica"><button class="rchip" aria-pressed="${S.rankView==="gen"}" data-act="rank" data-v="gen">Generale</button>${scored.map(r=>`<button class="rchip" aria-pressed="${S.rankView==="g"+r.n}" data-act="rank" data-v="g${r.n}">${r.n}ª giornata</button>`).join("")}</div>`;
   const v=(x)=>x?f2(x):"–";
   if(!scored.length||S.rankView==="gen"){
