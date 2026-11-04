@@ -767,12 +767,12 @@ function vPicks(L){
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div><div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div></div>
   <p class="center small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al calcio d'inizio di ogni partita.</p></section>`;
-  if(anyOpen)html+=`<div class="savebar"><span class="small">${dirty?`<b>${dirty}</b> modific${dirty===1?"a":"he"} da salvare`:"Nessuna modifica da salvare"}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":"Salva"}</button></div>`;
+  if(anyOpen)html+=`<div class="savebar"><span class="small">${dirty?"Modifiche da salvare":"Nessuna modifica da salvare"}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":"Salva"}</button></div>`;
   html+=vOthers(r);
   return html;
 }
 function vOthers(r){
-  if(!r.matches.some(m=>matchLocked(r,m)))return `<p class="center small muted" style="font-family:var(--f-ui)">Le schedine degli altri si vedono partita per partita, dal calcio d'inizio.</p>`;
+  if(!r.matches.some(m=>matchLocked(r,m)))return "";
   if(!S.showOthers)return `<button class="btn wide sec" data-act="others">Vedi le schedine di tutti</button>`;
   const head=r.matches.map(m=>`<th style="text-align:center" title="${esc(m.home)}–${esc(m.away)}">${abbr(m.home)}<br>${abbr(m.away)}</th>`).join("");
   const body=approved().map(pl=>{const pk=pickDoc(r._id,pl._id)?.picks||{};const s=roundScore(r,pl._id);
