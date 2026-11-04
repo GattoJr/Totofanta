@@ -14,10 +14,7 @@ const BOT_NAMES=["Zona Cesarini","Catenaccio","Bomber86","Il Mister","Tiki Taka"
 const TB_LABEL={best_day:"Miglior punteggio di giornata",highest_odd:"Quota più alta"};
 const HELP={
   access:"Privata: le richieste di accesso alla lega dovranno essere approvate dall'admin.\nPubblica: chiunque può accedere alla lega con il nome o il codice d'invito.",
-  mode:"Punteggi fissi: ogni pronostico indovinato assegna un numero fissato di punti, che può essere diverso tra 1, X e 2.\nQuote: ogni pronostico indovinato assegna un numero di punti pari alla sua quota.",
-  points:"Inserisci i punti da assegnare quando un giocatore indovina un pronostico 1, X o 2. Non si applica alla modalità Quote.",
   tie:"Se due giocatori finiscono a pari punti, vince chi ha il punteggio di giornata più alto (o la quota indovinata più alta). Se c'è ancora parità si confronta il secondo valore, e così via.",
-  timer:"Le quote della giornata diventano visibili ai giocatori con questo anticipo rispetto alla prima partita. L'admin può anche pubblicarle prima.",
 };
 
 /* ===================== Configurazione ===================== */
@@ -61,9 +58,9 @@ const S={
   screen:"home",drawer:false,modal:null,help:null,
   roundSel:null,rankView:"gen",
   form:{},formErr:"",authForm:{mode:"login",email:"",pw:"",pw2:""},authMsg:"",busy:false,
-  draft:null,editRid:null,confirm:null,showOthers:false,
+  confirm:null,showOthers:false,
   localUsers:[],
-  fixtures:[],siteAdmin:false,calN:null,admN:null,admEdit:null,
+  fixtures:[],odds:{},calRounds:{},siteAdmin:false,calN:null,admN:null,admEdit:null,
 };
 
 /* =====================================================================
@@ -88,8 +85,9 @@ const Local={
     if(!S.localUsers.length)S.localUsers=[{id:"local-"+rid(6),name:"Giocatore 1"}];
     const cur=lsGet("totofanta-local-cur");
     S.uid=S.localUsers.find(u=>u.id===cur)?cur:S.localUsers[0].id;saveLocalUsers();
-    S.siteAdmin=true;this.fixturesFrom(LocalStore.list("calendar"));
+    S.siteAdmin=true;this.fixturesFrom(LocalStore.list("calendar"));this.roundsFrom(LocalStore.list("calrounds"));
     LocalStore.watch("calendar",d=>{this.fixturesFrom(d);render()});
+    LocalStore.watch("calrounds",d=>{this.roundsFrom(d);render()});
     LocalStore.watch("leagues",docs=>{S.leagues=docs;render()});
     this.subscribeMe();
   },
@@ -101,7 +99,6 @@ const Local={
   openLeague(lid){
     unsubLeague.forEach(u=>u());unsubLeague=[];if(!lid)return;
     unsubLeague.push(LocalStore.watch(`leagues/${lid}/members`,d=>{if(S.lid!==lid)return;S.members=d;S.loaded.members=true;render()}));
-    unsubLeague.push(LocalStore.watch(`leagues/${lid}/rounds`,d=>{if(S.lid!==lid)return;S.rounds=d.map(withCalendar).sort((a,b)=>a.n-b.n);S.loaded.rounds=true;render()}));
     unsubLeague.push(LocalStore.watch(`leagues/${lid}/picks`,d=>{if(S.lid!==lid)return;S.picks=d;S.loaded.picks=true;render()}));
   },
   async addToMe(lid){const ls=Array.from(new Set([...(S.me.leagues||[]),lid]));S.me={...S.me,leagues:ls};await LocalStore.set(`data/users/${S.uid}/me`,{leagues:ls})},
@@ -110,7 +107,7 @@ const Local={
     const name=f.name.trim();
     if(S.leagues.some(l=>l.nameKey===name.toLowerCase()))throw new Error("Esiste già una lega con questo nome");
     const lid=rid(8);
-    await LocalStore.set(`leagues/${lid}`,{name,nameKey:name.toLowerCase(),logo:f.logo||null,type:f.type,pwHash:f.type==="private"?await sha(f.pw):null,inviteCode:rid(6).toUpperCase(),adminId:S.uid,mode:"quote",tiebreak:f.tiebreak,startRound:+f.start,oddsTimerH:+f.timer,createdAt:Date.now()});
+    await LocalStore.set(`leagues/${lid}`,{name,nameKey:name.toLowerCase(),logo:f.logo||null,type:f.type,pwHash:f.type==="private"?await sha(f.pw):null,inviteCode:rid(6).toUpperCase(),adminId:S.uid,mode:"quote",tiebreak:f.tiebreak,startRound:+f.start,createdAt:Date.now()});
     await LocalStore.set(`leagues/${lid}/members/${S.uid}`,{nick:f.nick.trim(),status:"approved",joinedAt:Date.now()});
     await this.addToMe(lid);return lid;
   },
@@ -132,16 +129,16 @@ const Local={
   },
   async approve(m){await LocalStore.set(`leagues/${S.lid}/members/${m._id}`,{nick:m.nick,status:"approved",bot:!!m.bot,joinedAt:m.joinedAt||Date.now()})},
   async removeMember(m){await LocalStore.del(`leagues/${S.lid}/members/${m._id}`)},
-  async saveRound(body){const rId="g"+body.n;await LocalStore.set(`leagues/${S.lid}/rounds/${rId}`,{n:body.n,matches:body.matches.map((m,i)=>({...m,id:m.id||"m"+(i+1)})),published:body.published,lockedAt:body.lockedAt,updatedAt:Date.now()});return rId},
-  async deleteRound(r){await LocalStore.del(`leagues/${S.lid}/rounds/${r._id}`);for(const p of S.picks.filter(p=>p.round===r._id))await LocalStore.del(`leagues/${S.lid}/picks/${p._id}`)},
   async addBot(name){await LocalStore.set(`leagues/${S.lid}/members/bot-${rid(6)}`,{nick:name,status:"approved",bot:true,joinedAt:Date.now()})},
   async botPicks(r,bots){for(const b of bots){const pk={};r.matches.forEach(m=>{if(m.o1)pk[m.id]=sampleEsito(m)});await LocalStore.set(`leagues/${S.lid}/picks/${r._id}~${b._id}`,{uid:b._id,round:r._id,picks:pk,updatedAt:Date.now()})}},
-  async deleteLeague(){const lid=S.lid;for(const p of S.picks)await LocalStore.del(`leagues/${lid}/picks/${p._id}`);for(const r of S.rounds)await LocalStore.del(`leagues/${lid}/rounds/${r._id}`);for(const m of S.members)await LocalStore.del(`leagues/${lid}/members/${m._id}`);await LocalStore.del(`leagues/${lid}`);await this.removeFromMe(lid)},
+  async deleteLeague(){const lid=S.lid;for(const p of S.picks)await LocalStore.del(`leagues/${lid}/picks/${p._id}`);for(const m of S.members)await LocalStore.del(`leagues/${lid}/members/${m._id}`);await LocalStore.del(`leagues/${lid}`);await this.removeFromMe(lid)},
   inviteCode(L){return L.inviteCode},
   // calendario: accoppiamenti da js/calendario.js, orari modificati salvati nel browser
-  fixturesFrom(docs){const ov={};for(const d of docs)ov[d._id]=d;
-    S.fixtures=(window.CALENDARIO_SERIE_A||[]).map(([n,pos,home,away,kickoff,day])=>{const id=n*100+pos;const o=ov[id];return{id,n,pos,home,away,kickoff:o&&"kickoff" in o?o.kickoff:kickoff,day,hg:o?.hg??null,ag:o?.ag??null}})},
-  async saveFixtures(changes){for(const c of changes)await LocalStore.set(`calendar/${c.id}`,{kickoff:c.kickoff,hg:c.hg,ag:c.ag})},
+  fixturesFrom(docs){const ov={};for(const d of docs)ov[d._id]=d;S.odds={};
+    S.fixtures=(window.CALENDARIO_SERIE_A||[]).map(([n,pos,home,away,kickoff,day])=>{const id=n*100+pos;const o=ov[id];if(o?.o1)S.odds[id]={o1:o.o1,oX:o.oX,o2:o.o2};return{id,n,pos,home,away,kickoff:o&&"kickoff" in o?o.kickoff:kickoff,day,hg:o?.hg??null,ag:o?.ag??null}})},
+  roundsFrom(docs){S.calRounds={};for(const d of docs)if(d.published)S.calRounds[+d._id]=true},
+  async saveFixtures(changes){for(const c of changes)await LocalStore.set(`calendar/${c.id}`,{kickoff:c.kickoff,hg:c.hg,ag:c.ag,o1:c.o1,oX:c.oX,o2:c.o2})},
+  async setPublished(n,v){await LocalStore.set(`calrounds/${n}`,{published:v})},
 };
 function saveLocalUsers(){lsSet("totofanta-local-users",JSON.stringify(S.localUsers));lsSet("totofanta-local-cur",S.uid)}
 
@@ -177,7 +174,7 @@ const Online={
     if(uid===S.uid&&S.authReady)return render();
     S.uid=uid;S.authReady=true;
     if(this.chan){this.sb.removeChannel(this.chan);this.chan=null}
-    if(!uid){S.leagues=[];S.me={leagues:[]};S.meLoaded=true;S.lid=null;S.members=[];S.rounds=[];S.picks=[];S.fixtures=[];S.siteAdmin=false;render();return}
+    if(!uid){S.leagues=[];S.me={leagues:[]};S.meLoaded=true;S.lid=null;S.members=[];S.rounds=[];S.picks=[];S.fixtures=[];S.odds={};S.calRounds={};S.siteAdmin=false;render();return}
     if(location.hash.includes("access_token")||location.hash.includes("type=")){try{history.replaceState(null,"",location.pathname+location.search)}catch{}}
     S.meLoaded=false;render();
     await Promise.all([this.refreshLeagues(),this.loadFixtures()]);
@@ -187,55 +184,59 @@ const Online={
   },
   subscribe(){
     const ch=this.sb.channel("tf-"+S.uid);
-    for(const t of ["leagues","members","rounds","matches","picks"])ch.on("postgres_changes",{event:"*",schema:"public",table:t},()=>this.refreshSoon());
-    ch.on("postgres_changes",{event:"*",schema:"public",table:"fixtures"},()=>{clearTimeout(this.tf);this.tf=setTimeout(()=>this.loadFixtures().then(render),400)});
+    for(const t of ["leagues","members","picks"])ch.on("postgres_changes",{event:"*",schema:"public",table:t},()=>this.refreshSoon());
+    for(const t of ["fixtures","odds","calendar_rounds"])ch.on("postgres_changes",{event:"*",schema:"public",table:t},()=>{clearTimeout(this.tf);this.tf=setTimeout(()=>this.loadFixtures().then(render),400)});
     ch.subscribe();this.chan=ch;
   },
   refreshSoon(){clearTimeout(this.t);this.t=setTimeout(()=>this.refresh(),250)},
-  async refresh(){await this.refreshLeagues();if(S.lid)await this.loadLeague(S.lid);render()},
+  async refresh(){await Promise.all([this.refreshLeagues(),this.loadFixtures()]);if(S.lid)await this.loadLeague(S.lid);render()},
   async refreshLeagues(){
     const {data,error}=await this.sb.from("leagues").select("*").order("created_at");
     if(error){console.warn(error);toast("Impossibile leggere le leghe: "+itMsg(error));return}
-    S.leagues=data.map(l=>({_id:l.id,name:l.name,nameKey:l.name_key,logo:l.logo,type:l.type,mode:l.mode,tiebreak:l.tiebreak,startRound:l.start_round,oddsTimerH:l.odds_timer_h,adminId:l.admin_id,createdAt:l.created_at}));
+    S.leagues=data.map(l=>({_id:l.id,name:l.name,nameKey:l.name_key,logo:l.logo,type:l.type,mode:l.mode,tiebreak:l.tiebreak,startRound:l.start_round,adminId:l.admin_id,createdAt:l.created_at}));
     S.me={leagues:S.leagues.map(l=>l._id)};S.meLoaded=true;
     if(S.lid&&!S.me.leagues.includes(S.lid))pickDefaultLeague();
   },
   openLeague(lid){if(lid)this.loadLeague(lid).then(render)},
   async loadFixtures(){
-    const [f,a]=await Promise.all([this.sb.from("fixtures").select("*").order("id"),this.sb.from("site_admins").select("user_id").eq("user_id",S.uid)]);
-    if(f.error){console.warn("Calendario non disponibile (manca la migrazione 02?)",f.error);S.fixtures=[];S.siteAdmin=false;return}
+    const sb=this.sb;
+    const [f,o,c,a]=await Promise.all([sb.from("fixtures").select("*").order("id"),sb.from("odds").select("*"),sb.from("calendar_rounds").select("n,published"),sb.from("site_admins").select("user_id").eq("user_id",S.uid)]);
+    if(f.error){console.warn("Calendario non disponibile",f.error);S.fixtures=[];S.siteAdmin=false;return}
     S.fixtures=f.data.map(x=>({id:x.id,n:x.n,pos:x.pos,home:x.home,away:x.away,kickoff:x.kickoff||null,day:x.day,hg:x.hg??null,ag:x.ag??null}));
+    S.odds={};if(!o.error)for(const x of o.data)S.odds[x.fixture_id]={o1:Number(x.o1),oX:Number(x.ox),o2:Number(x.o2)};
+    S.calRounds={};if(!c.error)for(const x of c.data)if(x.published)S.calRounds[x.n]=true;
     S.siteAdmin=!a.error&&a.data.length>0;
   },
   async saveFixtures(changes){
-    for(const c of changes){const d=this.check(await this.sb.from("fixtures").update({kickoff:c.kickoff,hg:c.hg,ag:c.ag}).eq("id",c.id).select("id"));if(!d.length)throw new Error("Non hai i permessi di amministratore per modificare il calendario")}
-    await this.loadFixtures();await this.refresh();
+    const sb=this.sb;
+    for(const c of changes){
+      const d=this.check(await sb.from("fixtures").update({kickoff:c.kickoff,hg:c.hg,ag:c.ag}).eq("id",c.id).select("id"));if(!d.length)throw new Error("Non hai i permessi di amministratore");
+      if(c.o1!=null)this.check(await sb.from("odds").upsert({fixture_id:c.id,o1:c.o1,ox:c.oX,o2:c.o2},{onConflict:"fixture_id"}));
+      else this.check(await sb.from("odds").delete().eq("fixture_id",c.id));
+    }
+    await this.refresh();
   },
+  async setPublished(n,v){const d=this.check(await this.sb.from("calendar_rounds").update({published:v}).eq("n",n).select("n"));if(!d.length)throw new Error("Non hai i permessi di amministratore");await this.refresh()},
   async loadLeague(lid){
     const seq=++this.loadSeq;const sb=this.sb;
-    const [mem,rnd,mat,pk,inv]=await Promise.all([
+    const [mem,pk,inv]=await Promise.all([
       sb.from("members").select("*").eq("league_id",lid),
-      sb.from("rounds").select("*").eq("league_id",lid).order("n"),
-      sb.from("matches").select("*").eq("league_id",lid).order("pos"),
-      sb.from("picks").select("member_id,match_id,pick").eq("league_id",lid),
+      sb.from("picks").select("member_id,fixture_id,pick").eq("league_id",lid),
       sb.rpc("get_invite_code",{p_league:lid}),
     ]);
     if(seq!==this.loadSeq||S.lid!==lid)return;
-    const e=mem.error||rnd.error||mat.error||pk.error;if(e){console.warn(e);toast("Errore nel caricare la lega: "+itMsg(e));return}
+    const e=mem.error||pk.error;if(e){console.warn(e);toast("Errore nel caricare la lega: "+itMsg(e));return}
     S.invite[lid]=inv.data||null;
     S.members=mem.data.map(m=>({_id:m.user_id||m.id,mid:m.id,nick:m.nickname,status:m.status,bot:m.is_bot,joinedAt:Date.parse(m.joined_at)}));
-    const byRound={};for(const m of mat.data)(byRound[m.round_id]=byRound[m.round_id]||[]).push({id:m.id,pos:m.pos,fixtureId:m.fixture_id??null,home:m.home||"",away:m.away||"",kickoff:m.kickoff||"",o1:m.o1==null?null:Number(m.o1),oX:m.ox==null?null:Number(m.ox),o2:m.o2==null?null:Number(m.o2),hg:m.hg,ag:m.ag});
-    S.rounds=rnd.data.map(r=>withCalendar({_id:"g"+r.n,dbid:r.id,n:r.n,published:r.published,lockedAt:r.locked_at?Date.parse(r.locked_at):null,firstKickoff:r.first_kickoff,matches:(byRound[r.id]||[]).sort((a,b)=>a.pos-b.pos)}));
-    const matchRound={};for(const r of S.rounds)for(const m of r.matches)matchRound[m.id]=r._id;
     const memberKey={};for(const m of S.members)memberKey[m.mid]=m._id;
     const docs={};
-    for(const p of pk.data){const rId=matchRound[p.match_id];const k=memberKey[p.member_id];if(!rId||!k)continue;const id=`${rId}~${k}`;(docs[id]=docs[id]||{_id:id,uid:k,round:rId,picks:{}}).picks[p.match_id]=p.pick}
+    for(const p of pk.data){const f=fixtureById(p.fixture_id);const k=memberKey[p.member_id];if(!f||!k)continue;const rId="g"+f.n;const id=`${rId}~${k}`;(docs[id]=docs[id]||{_id:id,uid:k,round:rId,picks:{}}).picks[String(p.fixture_id)]=p.pick}
     S.picks=Object.values(docs);
     S.loaded={members:true,rounds:true,picks:true};
   },
   check(res){if(res.error)throw new Error(itMsg(res.error));return res.data},
   async createLeague(f){
-    const lid=this.check(await this.sb.rpc("create_league",{p_name:f.name.trim(),p_type:f.type,p_password:f.type==="private"?f.pw:null,p_tiebreak:f.tiebreak,p_start_round:+f.start,p_odds_timer_h:+f.timer,p_logo:f.logo||null,p_nickname:f.nick.trim()}));
+    const lid=this.check(await this.sb.rpc("create_league",{p_name:f.name.trim(),p_type:f.type,p_password:f.type==="private"?f.pw:null,p_tiebreak:f.tiebreak,p_start_round:+f.start,p_logo:f.logo||null,p_nickname:f.nick.trim()}));
     await this.refreshLeagues();return lid;
   },
   async joinLeague(f){
@@ -244,22 +245,13 @@ const Online={
   },
   async setPick(r,m,p){
     const me=myMember();if(!me)throw new Error("Non risulti iscritto a questa lega");
-    if(p)this.check(await this.sb.from("picks").upsert({member_id:me.mid,match_id:m.id,pick:p},{onConflict:"member_id,match_id"}));
-    else this.check(await this.sb.from("picks").delete().eq("member_id",me.mid).eq("match_id",m.id));
+    if(p)this.check(await this.sb.from("picks").upsert({member_id:me.mid,fixture_id:+m.id,pick:p},{onConflict:"member_id,fixture_id"}));
+    else this.check(await this.sb.from("picks").delete().eq("member_id",me.mid).eq("fixture_id",+m.id));
   },
   async approve(m){this.check(await this.sb.from("members").update({status:"approved"}).eq("id",m.mid));await this.refresh()},
   async removeMember(m){this.check(await this.sb.from("members").delete().eq("id",m.mid));await this.refresh()},
-  async saveRound(body,existing){
-    const sb=this.sb;let rdb=existing?.dbid;
-    if(!rdb){rdb=this.check(await sb.from("rounds").insert({league_id:S.lid,n:body.n,published:false}).select("id").single()).id}
-    const rows=body.matches.map((m,i)=>({round_id:rdb,pos:i+1,...(S.fixtures.length?{fixture_id:m.fixtureId||null}:{}),home:m.home||null,away:m.away||null,kickoff:m.kickoff?new Date(m.kickoff).toISOString():null,o1:m.o1,ox:m.oX,o2:m.o2,hg:m.hg,ag:m.ag}));
-    this.check(await sb.from("matches").upsert(rows,{onConflict:"round_id,pos"}));
-    this.check(await sb.from("rounds").update({published:body.published,locked_at:body.lockedAt?new Date(body.lockedAt).toISOString():null}).eq("id",rdb));
-    await this.refresh();return "g"+body.n;
-  },
-  async deleteRound(r){this.check(await this.sb.from("rounds").delete().eq("id",r.dbid));await this.refresh()},
   async addBot(name){this.check(await this.sb.from("members").insert({league_id:S.lid,nickname:name,status:"approved",is_bot:true}));await this.refresh()},
-  async botPicks(r,bots){const rows=[];for(const b of bots)for(const m of r.matches)if(m.o1)rows.push({member_id:b.mid,match_id:m.id,pick:sampleEsito(m)});if(rows.length)this.check(await this.sb.from("picks").upsert(rows,{onConflict:"member_id,match_id"}));await this.refresh()},
+  async botPicks(r,bots){const rows=[];for(const b of bots)for(const m of r.matches)if(m.o1)rows.push({member_id:b.mid,fixture_id:+m.id,pick:sampleEsito(m)});if(rows.length)this.check(await this.sb.from("picks").upsert(rows,{onConflict:"member_id,fixture_id"}));await this.refresh()},
   async deleteLeague(){this.check(await this.sb.from("leagues").delete().eq("id",S.lid));await this.refreshLeagues()},
   inviteCode(L){return S.invite[L._id]||""},
   // ---- account
@@ -287,11 +279,11 @@ function pickDefaultLeague(){
   if(lid!==S.lid)selectLeague(lid);
 }
 function selectLeague(lid){
-  S.lid=lid;S.roundSel=null;S.draft=null;S.editRid=null;S.members=[];S.rounds=[];S.picks=[];S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
+  S.lid=lid;S.roundSel=null;S.members=[];S.rounds=[];S.picks=[];S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
   if(lid)lsSet("totofanta-last-lid:"+S.uid,lid);
   B.openLeague(lid);render();
 }
-function go(screen){S.screen=screen;S.drawer=false;S.modal=null;S.help=null;S.confirm=null;S.formErr="";if(screen!=="admin"){S.draft=null;S.editRid=null}render();window.scrollTo(0,0)}
+function go(screen){S.screen=screen;S.drawer=false;S.modal=null;S.help=null;S.confirm=null;S.formErr="";render();window.scrollTo(0,0)}
 function handleHash(){
   const m=(location.hash||"").replace("#","").match(/^invito-([A-Za-z0-9]+)$/);
   if(m){S.modal="join";S.form={code:m[1].toUpperCase(),useCode:true,name:"",pw:"",nick:""}}
@@ -305,26 +297,32 @@ const isAdmin=()=>{const L=league();return !!L&&L.adminId===S.uid};
 const approved=()=>S.members.filter(m=>m.status==="approved");
 const pickDoc=(rId,uid)=>S.picks.find(p=>p._id===`${rId}~${uid}`);
 function oddsComplete(r){return r.matches.length>0&&r.matches.every(m=>m.home&&m.away&&m.o1>1&&m.oX>1&&m.o2>1)}
-function firstKick(r){const ks=r.matches.map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x));if(ks.length)return Math.min(...ks);const f=r.firstKickoff?Date.parse(r.firstKickoff):NaN;return isNaN(f)?null:f}
-function autoPublishAt(r,L){const k=firstKick(r);return k==null?null:k-(L.oddsTimerH||24)*3600e3}
-function roundVisible(r,L){if(!r.matches.length)return false;if(r.published)return true;const a=autoPublishAt(r,L);return oddsComplete(r)&&a!=null&&Date.now()>=a}
-function matchLocked(r,m){if(r.lockedAt)return true;const k=+new Date(m.kickoff);return !isNaN(k)&&Date.now()>=k}
+function firstKick(r){const ks=r.matches.map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x));return ks.length?Math.min(...ks):null}
+function roundVisible(r){return !!r.published&&oddsComplete(r)}
+function matchLocked(r,m){const k=+new Date(m.kickoff);return !isNaN(k)&&Date.now()>=k}
 function roundDone(r){return r.matches.length>0&&r.matches.every(m=>esito(m))}
 function roundStatus(r,L){
   if(roundDone(r))return{t:"Conclusa",c:"ok"};
   if(r.matches.some(m=>esito(m)))return{t:"In corso",c:"blue"};
-  if(!roundVisible(r,L))return{t:"Quote in arrivo",c:"warn"};
+  if(!roundVisible(r))return r.matches.every(m=>matchLocked(r,m))?{t:"Non giocata",c:""}:{t:"Quote in arrivo",c:"warn"};
   if(r.matches.every(m=>matchLocked(r,m)))return{t:"Chiusa",c:""};
   return{t:"Aperta",c:"ok"};
 }
 /* calendario */
 const fixtureById=id=>S.fixtures.find(f=>f.id===id);
 const fixturesOf=n=>S.fixtures.filter(f=>f.n===n).sort((a,b)=>a.pos-b.pos);
-function withCalendar(r){if(!S.fixtures.length)return r;return{...r,matches:(r.matches||[]).map(m=>{const f=m.fixtureId&&fixtureById(m.fixtureId);return f?{...m,home:f.home,away:f.away,kickoff:f.kickoff||"",hg:f.hg??null,ag:f.ag??null}:m})}}
-function calendarDraft(n){return fixturesOf(n).map(f=>({id:"",fixtureId:f.id,home:f.home,away:f.away,kickoff:toInput(f.kickoff),day:f.day,o1:"",oX:"",o2:"",hg:"",ag:""}))}
+/* le giornate della lega: dalla giornata di inizio fino all'ultima pubblicata (o alla prossima in calendario) */
+function buildRounds(L){
+  if(!L||!S.fixtures.length)return[];
+  const pub=Object.keys(S.calRounds).map(Number);
+  const last=Math.min(38,Math.max(L.startRound,nextCalendarRound(),...pub));const out=[];
+  for(let n=L.startRound;n<=last;n++)out.push({_id:"g"+n,n,published:!!S.calRounds[n],matches:fixturesOf(n).map(f=>{const o=S.odds[f.id]||{};
+    return{id:String(f.id),home:f.home,away:f.away,kickoff:f.kickoff||"",o1:o.o1??null,oX:o.oX??null,o2:o.o2??null,hg:f.hg??null,ag:f.ag??null}})});
+  return out;
+}
 function adminDefaultRound(){const n=nextCalendarRound(),now=Date.now();const missing=k=>fixturesOf(k).some(f=>f.kickoff&&Date.parse(f.kickoff)<=now&&f.hg==null);return n>1&&!missing(n)&&missing(n-1)?n-1:n}
 function nextCalendarRound(){const now=Date.now();for(let n=1;n<=38;n++){const fs=fixturesOf(n);if(fs.some(f=>{const t=f.kickoff?Date.parse(f.kickoff):Date.parse(f.day+"T23:59");return t>=now}))return n}return 38}
-function currentRound(){const list=S.rounds;if(!list.length)return null;return list.find(r=>!roundDone(r))||list[list.length-1]}
+function currentRound(){const list=S.rounds;if(!list.length)return null;return list.find(r=>!roundDone(r)&&(r.published||r.matches.some(m=>!matchLocked(r,m))))||list[list.length-1]}
 
 /* ===================== Punteggi e classifica ===================== */
 function computeStandings(L,members,rounds,picks){
@@ -351,13 +349,6 @@ function roundScore(r,uid){const pk=pickDoc(`g${r.n}`,uid)?.picks||{};let pts=0,
 function genOdds(h,a){const d=(RATING[h]??72)+4-(RATING[a]??72);let pH=1/(1+Math.exp(-d/7));const pD=0.28-Math.min(0.1,Math.abs(d)/120);pH*=1-pD;const pA=1-pD-pH;const m=1.06;const o=p=>Math.max(1.05,Math.round(100/(p*m))/100);return{o1:o(pH),oX:o(pD),o2:o(pA)}}
 function sampleEsito(m){const w=[1/m.o1,1/m.oX,1/m.o2];const s=w[0]+w[1]+w[2];const x=Math.random()*s;return x<w[0]?"1":x<w[0]+w[1]?"X":"2"}
 function sampleScore(e){const r=n=>Math.floor(Math.random()*n);if(e==="X"){const g=r(3);return[g,g]}const w=1+r(3),l=r(w);return e==="1"?[w,l]:[l,w]}
-function exampleMatches(){
-  const t=[...TEAMS].sort(()=>Math.random()-.5);const sat=new Date();sat.setHours(0,0,0,0);
-  let add=(6-sat.getDay()+7)%7;if(add<2)add+=7;sat.setDate(sat.getDate()+add);
-  const slots=[[0,15,0],[0,18,0],[0,20,45],[1,12,30],[1,15,0],[1,15,0],[1,18,0],[1,20,45],[2,18,30],[2,20,45]];
-  return slots.map((s,i)=>{const d=new Date(sat);d.setDate(d.getDate()+s[0]);d.setHours(s[1],s[2]);const home=t[i*2],away=t[i*2+1];const o=genOdds(home,away);return{id:"",home,away,kickoff:toLocalInput(d),o1:o.o1.toFixed(2),oX:o.oX.toFixed(2),o2:o.o2.toFixed(2),hg:"",ag:""}});
-}
-
 /* ===================== Azioni ===================== */
 async function safe(fn){try{S.busy=true;await fn();return true}catch(e){console.warn(e);toast(itMsg(e));return false}finally{S.busy=false;render()}}
 function err(m){S.formErr=m;render()}
@@ -368,7 +359,7 @@ const ACT={
   drawer:()=>{S.drawer=!S.drawer;render()},
   closeAll:()=>{S.drawer=false;S.modal=null;S.help=null;render()},
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
-  newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?nextCalendarRound():1),timer:"24",nick:"",logo:null};go("create")},
+  newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?nextCalendarRound():1),nick:"",logo:null};go("create")},
   joinModal:()=>{S.form={name:"",pw:"",nick:"",code:"",useCode:false};S.formErr="";S.modal="join";S.drawer=false;render()},
   toggleCode:()=>{S.form.useCode=!S.form.useCode;S.formErr="";render()},
   pickLeague:d=>{selectLeague(d.lid);go("home")},
@@ -406,19 +397,6 @@ const ACT={
   // ---- admin
   approve:d=>safe(async()=>{await B.approve(S.members.find(x=>x._id===d.u));toast("Giocatore approvato")}),
   reject:d=>safe(async()=>{await B.removeMember(S.members.find(x=>x._id===d.u));toast("Richiesta rifiutata")}),
-  newRound:()=>{const L=league();const used=new Set(S.rounds.map(r=>r.n));let n=Math.max(L.startRound,...S.rounds.map(r=>r.n+1));while(used.has(n))n++;if(n>38)return toast("Hai già creato tutte le giornate fino alla 38ª");
-    const cal=calendarDraft(n);
-    S.draft={n:String(n),isNew:true,published:false,lockedAt:null,matches:cal.length===10?cal:Array.from({length:10},()=>({id:"",home:"",away:"",kickoff:"",o1:"",oX:"",o2:"",hg:"",ag:""}))};S.editRid="new";S.formErr="";render();window.scrollTo(0,0)},
-  editRound:d=>{const r=S.rounds.find(x=>x._id===d.r);
-    const ms=Array.from({length:10},(_,i)=>r.matches[i]||{id:"",home:"",away:"",kickoff:"",o1:null,oX:null,o2:null,hg:null,ag:null});
-    S.draft={n:String(r.n),isNew:false,published:r.published,lockedAt:r.lockedAt,matches:ms.map(m=>({id:m.id,fixtureId:m.fixtureId||null,day:m.fixtureId?fixtureById(m.fixtureId)?.day:null,home:m.home||"",away:m.away||"",kickoff:toInput(m.kickoff),o1:m.o1?.toFixed(2)??"",oX:m.oX?.toFixed(2)??"",o2:m.o2?.toFixed(2)??"",hg:m.hg??"",ag:m.ag??""}))};
-    S.editRid=d.r;S.confirm=null;S.formErr="";render();window.scrollTo(0,0)},
-  closeEditor:()=>{S.draft=null;S.editRid=null;S.confirm=null;S.formErr="";render()},
-  fillExample:()=>{const ex=exampleMatches();S.draft.matches=S.draft.matches.map((m,i)=>({...ex[i],id:m.id}));render();toast("Giornata di esempio con quote generate")},
-  genOdds:()=>{S.draft.matches.forEach(m=>{if(m.home&&m.away){const o=genOdds(m.home,m.away);m.o1=o.o1.toFixed(2);m.oX=o.oX.toFixed(2);m.o2=o.o2.toFixed(2)}});render()},
-  saveRound:d=>saveRound(d.how),
-  simResults:()=>{const sv=S.rounds.find(r=>r._id===S.editRid);S.draft.matches.forEach((m,i)=>{if(sv&&matchLocked(sv,sv.matches[i]||m)&&(m.hg===""||m.hg==null)){const n={o1:num(m.o1)||2,oX:num(m.oX)||3,o2:num(m.o2)||3};const[h,a]=sampleScore(sampleEsito(n));m.hg=String(h);m.ag=String(a)}});render();toast("Risultati simulati: premi Salva risultati")},
-  delRound:()=>{if(S.confirm!=="del"){S.confirm="del";return render()}safe(async()=>{const r=S.rounds.find(x=>x._id===S.editRid);await B.deleteRound(r);S.draft=null;S.editRid=null;S.confirm=null;toast("Giornata eliminata")})},
   addBot:()=>safe(async()=>{const used=new Set(S.members.map(m=>m.nick.toLowerCase()));const name=BOT_NAMES.find(n=>!used.has(n.toLowerCase()))||("Bot "+rid(3));await B.addBot(name);toast(`${name} aggiunto`)}),
   botPicks:d=>safe(async()=>{const r=S.rounds.find(x=>x._id===d.r);const bots=S.members.filter(m=>m.bot);if(!bots.length)return toast("Aggiungi prima un giocatore di prova");await B.botPicks(r,bots);toast("Schedine casuali inserite")}),
   removeMember:d=>{if(S.confirm!=="rm-"+d.u){S.confirm="rm-"+d.u;return render()}safe(async()=>{await B.removeMember(S.members.find(x=>x._id===d.u));S.confirm=null;toast("Giocatore rimosso")})},
@@ -433,18 +411,29 @@ const ACT={
   admSim:()=>{const now=Date.now();let k=0;for(const f of fixturesOf(S.admN)){const e=S.admEdit?.e[f.id];if(!e)continue;const t=e.k?+new Date(e.k):NaN;
     if(!isNaN(t)&&t<=now&&e.hg===""&&e.ag===""){const x=Math.random();const[h,a]=sampleScore(x<.45?"1":x<.72?"X":"2");e.hg=String(h);e.ag=String(a);k++}}
     render();toast(k?`${k} risultati simulati: premi Salva`:"Nessuna partita iniziata senza risultato")},
+  admOdds:()=>{let k=0;for(const f of fixturesOf(S.admN)){const e=S.admEdit?.e[f.id];if(!e||e.o1||e.oX||e.o2)continue;const o=genOdds(f.home,f.away);e.o1=o.o1.toFixed(2);e.oX=o.oX.toFixed(2);e.o2=o.o2.toFixed(2);k++}
+    render();toast(k?`Quote indicative per ${k} partite: controllale e premi Salva`:"Tutte le partite hanno già le quote")},
   admSave:()=>{
     const now=Date.now();const changes=[];
     for(const f of fixturesOf(S.admN)){const e=S.admEdit?.e[f.id];if(!e)continue;
       const d=e.k?new Date(e.k):null;const kickoff=d&&!isNaN(d)?d.toISOString():null;const hg=int(e.hg),ag=int(e.ag);
+      const od=[num(e.o1),num(e.oX),num(e.o2)];const nOdds=od.filter(x=>x!=null).length;
+      if(nOdds&&nOdds<3)return err(`${f.home}–${f.away}: servono tutte e tre le quote (1, X, 2)`);
+      if(od.some(x=>x!=null&&x<=1))return err(`${f.home}–${f.away}: le quote devono essere maggiori di 1`);
       if((hg==null)!==(ag==null))return err(`Risultato incompleto in ${f.home}–${f.away}`);
       if(hg!=null&&(!kickoff||Date.parse(kickoff)>now))return err(`${f.home}–${f.away}: il risultato si inserisce dopo il calcio d'inizio`);
+      const r2=x=>x==null?null:Math.round(x*100)/100;const[o1,oX,o2]=od.map(r2);const cur=S.odds[f.id]||{};
       const sameK=(kickoff?Date.parse(kickoff):null)===(f.kickoff?Date.parse(f.kickoff):null);
-      if(!sameK||hg!==(f.hg??null)||ag!==(f.ag??null))changes.push({id:f.id,kickoff,hg,ag})}
+      const sameO=o1===(cur.o1??null)&&oX===(cur.oX??null)&&o2===(cur.o2??null);
+      if(!sameK||!sameO||hg!==(f.hg??null)||ag!==(f.ag??null))changes.push({id:f.id,kickoff,hg,ag,o1,oX,o2})}
     if(!changes.length)return toast("Nessuna modifica da salvare");
     S.formErr="";
     safe(async()=>{await B.saveFixtures(changes);S.admEdit=null;toast(`${changes.length===1?"1 partita aggiornata":changes.length+" partite aggiornate"}${ONLINE?" per tutte le leghe":""}`)});
   },
+  admPub:d=>{const n=S.admN;const v=d.v==="1";
+    if(v){if(admDirty())return err("Salva prima le modifiche, poi pubblica");
+      const ok=fixturesOf(n).filter(f=>f.kickoff&&S.odds[f.id]).length;if(ok<10)return err(`Per pubblicare servono orari e quote di tutte le 10 partite (complete: ${ok})`)}
+    S.formErr="";safe(async()=>{await B.setPublished(n,v);toast(v?`Quote della ${n}ª giornata pubblicate`:`Pubblicazione della ${n}ª giornata ritirata`)})},
   // ---- modalità prova
   addLocal:()=>{const u={id:"local-"+rid(6),name:"Giocatore "+(S.localUsers.length+1)};S.localUsers.push(u);switchLocal(u.id)},
   // ---- account
@@ -474,32 +463,6 @@ const ACT={
 };
 function switchLocal(id){S.uid=id;saveLocalUsers();selectLeague(null);Local.subscribeMe();toast("Ora giochi come "+(S.localUsers.find(u=>u.id===id)?.name||""));render()}
 
-async function saveRound(how){
-  const d=S.draft;const n=+d.n;
-  if(!(n>=1&&n<=38))return err("Numero giornata non valido");
-  if(d.isNew&&S.rounds.some(r=>r.n===n))return err(`La giornata ${n} esiste già`);
-  const teams=d.matches.flatMap(m=>[m.home,m.away]).filter(Boolean);
-  if(new Set(teams).size!==teams.length)return err("Una squadra compare in più partite");
-  const matches=d.matches.map(m=>({id:m.id,fixtureId:m.fixtureId||null,home:m.home||"",away:m.away||"",kickoff:m.kickoff||"",o1:num(m.o1),oX:num(m.oX),o2:num(m.o2),hg:int(m.hg),ag:int(m.ag)}));
-  for(const m of matches){if((m.hg==null)!==(m.ag==null))return err(`Risultato incompleto in ${m.home||"?"}–${m.away||"?"}`);
-    for(const k of["o1","oX","o2"])if(m[k]!=null&&m[k]<=1)return err(`Le quote devono essere maggiori di 1 (${m.home}–${m.away})`)}
-  const body={n,matches,published:!!d.published,lockedAt:d.lockedAt||null};
-  if(how==="publish"){
-    if(matches.some(m=>m.fixtureId&&!m.kickoff))return err(S.siteAdmin?"Alcune partite non hanno ancora l'orario: inseriscilo nel Pannello amministratore, poi pubblica.":"Alcune partite non hanno ancora l'orario ufficiale: si potrà pubblicare quando l'amministratore lo inserisce.");
-    if(!oddsComplete(body)||matches.some(m=>!m.kickoff))return err("Per pubblicare servono 10 partite con squadre, orari e quote");body.published=true}
-  if(how==="lock")body.lockedAt=Date.now();
-  if(how==="unlock")body.lockedAt=null;
-  const existing=d.isNew?null:S.rounds.find(r=>r._id===S.editRid);
-  S.formErr="";
-  await safe(async()=>{const rId=await B.saveRound(body,existing);
-    const saved=S.rounds.find(r=>r._id===rId);
-    S.draft.published=body.published;S.draft.lockedAt=body.lockedAt;S.draft.isNew=false;S.editRid=rId;
-    if(saved)S.draft.matches.forEach((m,i)=>{if(saved.matches[i])m.id=saved.matches[i].id});
-    const past=matches.filter(m=>m.kickoff&&m.hg==null&&+new Date(m.kickoff)<=Date.now()).length;
-    const msg=how==="publish"?"Quote pubblicate":how==="lock"?"Pronostici chiusi":how==="results"?"Risultati salvati":"Giornata salvata";
-    toast(past&&how!=="lock"&&how!=="results"?`${msg}. Attenzione: ${past} partit${past===1?"a ha":"e hanno"} l'orario già passato, quindi i pronostici sono bloccati`:msg)});
-}
-
 /* ===================== Eventi ===================== */
 const app=document.getElementById("app");
 app.addEventListener("click",e=>{const t=e.target.closest("[data-act]");if(!t||t.disabled)return;const fn=ACT[t.dataset.act];if(fn){e.preventDefault();fn(t.dataset,t)}});
@@ -507,7 +470,6 @@ app.addEventListener("input",e=>{const t=e.target;if(t.dataset.bind){setPath(S,t
 app.addEventListener("change",e=>{const t=e.target;
   if(t.id==="who-sel")return switchLocal(t.value);
   if(t.id==="league-sel"){selectLeague(t.value);return}
-  if(t.id==="ed-n"&&S.draft&&S.draft.isNew){S.draft.n=t.value;const cal=calendarDraft(+t.value);if(cal.length===10)S.draft.matches=cal;render();return}
   if(t.id==="cal-n"){S.calN=+t.value;render();return}
   if(t.id==="adm-n"){S.admN=+t.value;S.admEdit=null;S.formErr="";render();return}
   if(t.id==="cf-logo"&&t.files[0]){const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement("canvas");c.width=c.height=128;const x=c.getContext("2d");const s=Math.min(img.width,img.height);x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,128,128);S.form.logo=c.toDataURL("image/jpeg",.85);render()};img.src=fr.result};fr.readAsDataURL(t.files[0])}
@@ -528,7 +490,7 @@ const I={
 /* ===================== Render ===================== */
 function render(){
   const a=document.activeElement;const fid=a&&a.id;let ss=null,se=null;try{ss=a.selectionStart;se=a.selectionEnd}catch{}
-  const L=league();
+  const L=league();S.rounds=buildRounds(L);
   const needLogin=ONLINE&&S.authReady&&!S.uid;
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
   const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":S.screen==="pannello"?"Amministratore":"TotoFanta";
@@ -573,7 +535,7 @@ function vDrawer(){
    <button class="dl" data-act="newLeague">Crea una lega</button><button class="dl" data-act="joinModal">Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">Le mie leghe</button><button class="dl" data-act="openCal">Calendario Serie A</button>
    ${S.siteAdmin?`<div class="grp">Amministratore del sito</div><button class="dl" data-act="openPanel">Pannello amministratore</button>`:""}
    ${L?`<div class="grp">Lega</div><button class="dl" data-act="go" data-s="lega">Regolamento lega</button><button class="dl" data-act="go" data-s="lega">Invita alla tua lega</button>`:""}
-   ${admin?`<div class="grp">Opzioni admin</div><button class="dl" data-act="go" data-s="admin">Gestisci giornate</button><button class="dl" data-act="go" data-s="lega">Richieste di accesso${pend?` (${pend})`:""}</button><button class="dl danger" data-act="delLeague">Elimina lega</button>`:""}
+   ${admin?`<div class="grp">Opzioni admin</div><button class="dl" data-act="go" data-s="admin">Gestione lega</button><button class="dl" data-act="go" data-s="lega">Richieste di accesso${pend?` (${pend})`:""}</button><button class="dl danger" data-act="delLeague">Elimina lega</button>`:""}
   </nav></aside>`;
 }
 function vHelp(){return `<div class="scrim" data-act="closeAll"></div><div class="card modal" role="dialog" aria-modal="true"><p style="white-space:pre-line">${esc(HELP[S.help])}</p><button class="btn sm" data-act="closeAll" style="align-self:flex-end">Ho capito</button></div>`}
@@ -660,7 +622,7 @@ function vHome(L){
   let html=leagueSelect();
   if(anyScored)html+=`<section class="card"><div class="stats"><div><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></div><div><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></div><div><b>${mine?mine.played:0}</b><span>Giornate</span></div></div><button class="btn block" data-act="go" data-s="classifica">Classifica</button></section>`;
   html+=`<section class="card">${statusCard(L,r)}</section>`;
-  if(r&&roundVisible(r,L)){
+  if(r&&roundVisible(r)){
     const upcoming=r.matches.filter(m=>!esito(m));const show=upcoming.length?upcoming:r.matches;
     html+=`<div><div class="sect">${upcoming.length?"Prossimi incontri":"Risultati"}</div><div class="small" style="margin:2px 0 8px">${r.n}° Giornata</div>
     <div class="next">${show.map(m=>`<div class="mini"><div class="teams">${crest(m.home)}<span>${abbr(m.home)} - ${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:`<span>${fmtDay(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`}</div></div>`).join("")}</div></div>`;
@@ -668,10 +630,10 @@ function vHome(L){
   return html;
 }
 function statusCard(L,r){
-  const admin=isAdmin();
-  if(!r){return `<p class="cta-title">La competizione non è ancora iniziata</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button>${admin?`<button class="btn wide sec" data-act="go" data-s="admin">Crea la ${L.startRound}ª giornata</button>`:`<p class="count">Si parte dalla ${L.startRound}ª giornata</p>`}`}
-  if(!roundVisible(r,L)){const a=autoPublishAt(r,L);
-    return `<p class="cta-title">${S.rounds[0]===r&&!S.rounds.some(x=>x.matches.some(m=>esito(m)))?"La competizione non è ancora iniziata":`Quote della ${r.n}ª giornata in arrivo`}</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">${a?`Quote disponibili tra: ${countdown(a-Date.now())}`:"Quote disponibili a breve"}</p>${admin?`<button class="btn wide sec" data-act="go" data-s="admin">Gestisci giornata</button>`:""}`}
+  const panelBtn=S.siteAdmin?`<button class="btn wide sec" data-act="openPanel" data-n="${r?r.n:L.startRound}">Pannello amministratore</button>`:"";
+  if(!r){return `<p class="cta-title">La competizione non è ancora iniziata</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">Si parte dalla ${L.startRound}ª giornata</p>${panelBtn}`}
+  if(!roundVisible(r)){const k=firstKick(r);
+    return `<p class="cta-title">${S.rounds[0]===r&&!S.rounds.some(x=>x.matches.some(m=>esito(m)))?"La competizione non è ancora iniziata":`Quote della ${r.n}ª giornata in arrivo`}</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">${k?`Si gioca da ${fmtDow(k)} · le quote arrivano prima della giornata`:"Le quote arrivano prima della giornata"}</p>${panelBtn}`}
   const open=r.matches.filter(m=>!matchLocked(r,m));
   if(!open.length){
     if(roundDone(r))return `<p class="cta-title">${r.n}ª giornata conclusa</p><p class="count">Hai fatto <b>${f2(roundScore(r,S.uid).pts)}</b> punti</p><button class="btn wide" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
@@ -684,20 +646,20 @@ function statusCard(L,r){
 
 /* ---- Pronostici (3.1) ---- */
 function vPicks(L){
-  const admin=isAdmin();const list=S.rounds;
-  if(!list.length)return `<section class="card"><p class="cta-title">Nessuna giornata disponibile</p><p class="center small muted">L'admin non ha ancora caricato la prima giornata.</p>${admin?`<button class="btn wide" data-act="go" data-s="admin">Crea la ${L.startRound}ª giornata</button>`:""}</section>`;
+  const list=S.rounds;
+  if(!list.length)return `<section class="card"><p class="cta-title">Nessuna giornata disponibile</p><p class="center small muted">Il calendario non è ancora disponibile.</p></section>`;
   const r=(S.roundSel!=null&&list.find(x=>x.n===S.roundSel))||currentRound();
-  const vis=roundVisible(r,L);const st=roundStatus(r,L);
+  const vis=roundVisible(r);const st=roundStatus(r,L);
   let html=`<div class="row"><h2 class="grow">${r.n}° Giornata</h2><span class="chip ${st.c}">${st.t}</span></div>`;
   if(list.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${list.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
-  if(!vis){const a=autoPublishAt(r,L);return html+`<section class="card"><p class="cta-title">Quote in arrivo</p><p class="count">${a?`Disponibili tra ${countdown(a-Date.now())}`:"Disponibili a breve"}</p>${admin?`<button class="btn wide sec" data-act="go" data-s="admin">Gestisci giornata</button>`:""}</section>`}
+  if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p>${S.siteAdmin?`<button class="btn wide sec" data-act="openPanel" data-n="${r.n}">Pannello amministratore</button>`:""}</section>`}
   const mine=pickDoc(r._id,S.uid)?.picks||{};const sc=roundScore(r,S.uid);let potential=0;
   html+=r.matches.map(m=>{
     const locked=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
       return `<button class="${cls}" ${locked?"disabled":""} data-act="pick" data-r="${r._id}" data-m="${m.id}" data-p="${k}" aria-pressed="${sel}" aria-label="${esc(m.home)}–${esc(m.away)}: ${k}, quota ${o?o.toFixed(2):"non disponibile"}"><span class="s">${k}</span><span class="o">${o?o.toFixed(2):"—"}</span></button>`};
     const mid=e?`<span class="score">${m.hg}-${m.ag}</span>`:"VS";
-    const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(locked?`<span class="chip">${r.lockedAt?"Chiusa dall'admin":`Iniziata alle ${fmtTime(m.kickoff)}`} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
+    const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(locked?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
     return `<section class="card match"><div class="date">${fmtFull(m.kickoff)}</div><div class="line">${crest(m.home,1)}<span class="h">${esc(m.home)}</span><span class="vs">${mid}</span><span class="a">${esc(m.away)}</span>${crest(m.away,1)}</div><div class="picks">${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div><div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div></div>
@@ -746,7 +708,7 @@ function vInfo(L){
    <tr><td>Modalità</td><td>Quote</td></tr>
    <tr><td>Spareggio</td><td>${TB_LABEL[L.tiebreak]}</td></tr>
    <tr><td>Durata</td><td>Dalla ${L.startRound}ª alla 38ª giornata</td></tr>
-   <tr><td>Quote visibili</td><td>${L.oddsTimerH} ore prima della giornata</td></tr></tbody></table>
+   <tr><td>Quote</td><td>Pubblicate dall'amministratore del sito prima di ogni giornata</td></tr></tbody></table>
    <ol class="rules"><li>Ogni giornata si pronostica l'esito 1, X o 2 delle 10 partite.</li><li>Pronostico giusto = punti pari alla quota. Sbagliato o mancante = 0.</li><li>Si può cambiare fino al calcio d'inizio di ogni partita.</li><li>Vince chi ha più punti all'ultima giornata.</li></ol></section>
   <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m.bot?` <span class="chip">prova</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ${S.confirm==="rm-"+m._id?"danger":"ghost"}" data-act="removeMember" data-u="${m._id}">${S.confirm==="rm-"+m._id?"Conferma":"Rimuovi"}</button>`:""}</div>`).join("")}</div></section>
   ${admin&&S.confirm==="delLeague"?`<section class="card"><h3>Eliminare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Spariscono giornate, schedine e classifica per tutti i partecipanti. Non si può annullare.</p><div class="row"><button class="btn danger" data-act="delLeague">Elimina definitivamente</button><button class="btn sec" data-act="go" data-s="lega">Annulla</button></div></section>`:""}`;
@@ -772,22 +734,31 @@ function vCalendar(){
 }
 
 /* ---- Pannello amministratore del sito ---- */
+const oddStr=x=>x==null?"":Number(x).toFixed(2);
+function admBase(f){const o=S.odds[f.id]||{};return{k:toInput(f.kickoff),o1:oddStr(o.o1),oX:oddStr(o.oX),o2:oddStr(o.o2),hg:f.hg==null?"":String(f.hg),ag:f.ag==null?"":String(f.ag)}}
+function admDirty(){if(!S.admEdit)return false;return fixturesOf(S.admEdit.n).some(f=>{const e=S.admEdit.e[f.id],b=admBase(f);return e&&Object.keys(b).some(k=>String(e[k]??"")!==b[k])})}
 function vPanel(){
   let html=`<h2 class="pagetitle">Pannello amministratore</h2>
-  <p class="tip">${ONLINE?"Quello che salvi qui vale subito per tutte le leghe.":"Modalità prova: le modifiche restano in questo browser."} Poteri attivi: <b>orari del calendario</b> e <b>risultati</b>.</p>`;
+  <p class="tip">${ONLINE?"Quello che salvi qui vale subito per tutte le leghe.":"Modalità prova: le modifiche restano in questo browser."} Poteri attivi: <b>orari</b>, <b>quote</b> e <b>risultati</b> delle partite, <b>pubblicazione</b> delle giornate.</p>`;
   if(!S.fixtures.length)return html+noCalendar();
   const n=S.admN||(S.admN=adminDefaultRound());const fs=fixturesOf(n);
-  if(!S.admEdit||S.admEdit.n!==n){S.admEdit={n,e:{}};for(const f of fs)S.admEdit.e[f.id]={k:toInput(f.kickoff),hg:f.hg??"",ag:f.ag??""}}
-  const now=Date.now();
-  html+=`<section class="card"><h3>Orari e risultati</h3>${roundNav(n,"admStep","adm-n")}<div class="list">${fs.map(f=>{const e=S.admEdit.e[f.id];
+  if(!S.admEdit||S.admEdit.n!==n){S.admEdit={n,e:{}};for(const f of fs)S.admEdit.e[f.id]=admBase(f)}
+  const now=Date.now();const pub=!!S.calRounds[n];const complete=fs.filter(f=>f.kickoff&&S.odds[f.id]).length;
+  html+=`<section class="card">${roundNav(n,"admStep","adm-n")}
+   <div class="row"><span class="grow small" style="font-family:var(--f-ui)">${pub?"Quote <b>pubblicate</b>: i giocatori le vedono e possono pronosticare.":`Quote <b>non pubblicate</b> · partite pronte (orario e quote salvati): <b>${complete}/10</b>`}</span>
+   <span class="chip ${pub?"ok":"warn"}">${pub?"Pubblicata":"Non pubblicata"}</span></div>
+   <div class="row">${pub?`<button class="btn sm sec" data-act="admPub" data-v="0" ${S.busy?"disabled":""}>Ritira pubblicazione</button>`:`<button class="btn sm" data-act="admPub" data-v="1" ${S.busy?"disabled":""}>Pubblica quote</button>`}</div></section>
+  <section class="card"><div class="row"><h3 class="grow">Partite della ${n}ª giornata</h3><button class="btn sm sec" data-act="admOdds">Quote indicative</button></div>
+  <div class="list">${fs.map(f=>{const e=S.admEdit.e[f.id];
     const t=e.k?+new Date(e.k):NaN;const started=!isNaN(t)&&t<=now;const es=esito({hg:int(e.hg),ag:int(e.ag)});
     return `<div class="adm-m"><div class="t">${crest(f.home)}<span>${esc(f.home)}</span><span class="muted">–</span><span>${esc(f.away)}</span>${crest(f.away)}</div>
-     <input type="datetime-local" id="adm-k${f.id}" data-bind="admEdit.e.${f.id}.k" data-rerender value="${esc(e.k)}" aria-label="Calcio d'inizio ${esc(f.home)}–${esc(f.away)}">
+     <input type="datetime-local" class="k" id="adm-k${f.id}" data-bind="admEdit.e.${f.id}.k" data-rerender value="${esc(e.k)}" aria-label="Calcio d'inizio ${esc(f.home)}–${esc(f.away)}">
+     <div class="od">${["o1","oX","o2"].map((k,j)=>`<input type="text" inputmode="decimal" id="adm-${k}${f.id}" data-bind="admEdit.e.${f.id}.${k}" value="${esc(e[k])}" placeholder="${["1","X","2"][j]}" aria-label="Quota ${["1","X","2"][j]} ${esc(f.home)}–${esc(f.away)}">`).join("")}</div>
      <div class="sc"><input type="number" min="0" id="adm-h${f.id}" data-bind="admEdit.e.${f.id}.hg" value="${esc(e.hg)}" ${started?"":"disabled"} aria-label="Gol ${esc(f.home)}"><span>-</span><input type="number" min="0" id="adm-a${f.id}" data-bind="admEdit.e.${f.id}.ag" value="${esc(e.ag)}" ${started?"":"disabled"} aria-label="Gol ${esc(f.away)}"></div>
      <span class="small muted st">${!e.k?`orario da definire · indicativa ${f.day?fmtDow(f.day):"—"}`:started?(es?"esito "+es:"risultato da inserire"):"da giocare"}</span></div>`}).join("")}</div>
    ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
    <div class="row"><button class="btn sm" data-act="admSave" ${S.busy?"disabled":""}>Salva</button><button class="btn sm ghost" data-act="admUndo">Annulla modifiche</button><button class="btn sm sec" data-act="admSim">Simula risultati (test)</button></div>
-   <p class="small muted" style="font-family:var(--f-ui)">Il risultato si può inserire solo dopo il calcio d'inizio. Per correggerlo basta cambiarlo e salvare: le classifiche si ricalcolano da sole.</p></section>`;
+   <p class="small muted" style="font-family:var(--f-ui)">Per pubblicare servono orario e quote di tutte le 10 partite. Il risultato si inserisce dopo il calcio d'inizio; se lo correggi, le classifiche si ricalcolano da sole.</p></section>`;
   return html;
 }
 
@@ -801,65 +772,24 @@ function vCreate(){
   <section class="card"><div class="q">Accessibilità lega:<button class="help" data-act="help" data-k="access" aria-label="Spiegazione">?</button></div><div class="opts">
    ${opt("cf-type","cf-type-pr","private","form.type","Privata",f.type==="private",1)}${opt("cf-type","cf-type-pu","public","form.type","Pubblica",f.type==="public",1)}</div></section>
   ${f.type==="private"?`<section class="card"><div class="q">Scegli una password per la tua lega:</div><input type="text" id="cf-pw" data-bind="form.pw" value="${esc(f.pw)}" maxlength="30" autocomplete="off" placeholder="Almeno 4 caratteri"></section>`:""}
-  <section class="card"><div class="q">Modalità di gioco:<button class="help" data-act="help" data-k="mode" aria-label="Spiegazione">?</button></div><div class="opts">
-   <label class="opt off"><input type="radio" disabled>Punteggi fissi<span class="tag">presto</span></label>
-   <label class="opt"><input type="radio" checked>Quote</label>
-   <label class="opt off"><input type="radio" disabled>Risultati esatti<span class="tag">presto</span></label></div></section>
-  <section class="card disabled-block" aria-disabled="true"><div class="q">Regole di assegnazione punti<button class="help" data-act="help" data-k="points" aria-label="Spiegazione">?</button></div>
-   <div class="pointgrid"><span>1</span><span>X</span><span>2</span><span class="box">—</span><span class="box">—</span><span class="box">—</span></div><p class="na center">Non applicabile alla modalità Quote</p></section>
   <section class="card"><div class="q">Criterio di spareggio:<button class="help" data-act="help" data-k="tie" aria-label="Spiegazione">?</button></div><div class="opts">
    ${opt("cf-tb","cf-tb1","best_day","form.tiebreak","Miglior punteggio di giornata",f.tiebreak==="best_day")}${opt("cf-tb","cf-tb2","highest_odd","form.tiebreak","Quota più alta indovinata",f.tiebreak==="highest_odd")}</div></section>
   <section class="card"><div class="q">Giornata di inizio della lega:</div><select id="cf-start" data-bind="form.start">${Array.from({length:38},(_,i)=>`<option value="${i+1}"${+f.start===i+1?" selected":""}>${i+1}° Giornata</option>`).join("")}</select></section>
-  <section class="card"><div class="q">Pubblicazione delle quote:<button class="help" data-act="help" data-k="timer" aria-label="Spiegazione">?</button></div><select id="cf-timer" data-bind="form.timer">${[6,12,24,48,72].map(h=>`<option value="${h}"${+f.timer===h?" selected":""}>${h} ore prima della giornata</option>`).join("")}</select></section>
   <section class="card"><div class="q">Il tuo nickname:</div><input type="text" id="cf-nick" data-bind="form.nick" value="${esc(f.nick)}" maxlength="20" placeholder="Come ti vedranno gli altri"></section>
-  <p class="small muted center" style="font-family:var(--f-ui)">Competizioni parallele (Sopravvissuto, Battle Royale…) in arrivo.</p>
+  <p class="small muted center" style="font-family:var(--f-ui)">Si gioca in modalità Quote: ogni pronostico indovinato vale i punti della sua quota. Le quote le pubblica l'amministratore prima di ogni giornata.</p>
   <section class="card">${S.formErr?`<p class="err center">${esc(S.formErr)}</p>`:""}<button class="btn wide" data-act="create" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Crea lega"}</button></section>`;
 }
 
 /* ---- Admin ---- */
 function vAdmin(L){
-  if(S.draft)return vEditor(L);
-  const bots=S.members.filter(m=>m.bot);
-  return `<h2 class="pagetitle">Admin</h2>
-  <section class="card"><div class="row"><h3 class="grow">Giornate</h3><button class="btn sm" data-act="newRound">Nuova giornata</button></div>
-  ${S.rounds.length?`<div class="list">${S.rounds.map(r=>{const st=roundStatus(r,L);const np=approved().filter(m=>Object.keys(pickDoc(r._id,m._id)?.picks||{}).length).length;return `<div class="row"><span class="grow"><b>${r.n}ª giornata</b><br><span class="small muted">${fmtFull(firstKick(r))} · ${np}/${approved().length} schedine</span></span><span class="chip ${st.c}">${st.t}</span><button class="btn sm sec" data-act="editRound" data-r="${r._id}">Gestisci</button></div>`}).join("")}</div>`:`<p class="small muted" style="font-family:var(--f-ui)">Crea la ${L.startRound}ª giornata: inserisci partite e quote, oppure genera una giornata di esempio.</p>`}</section>
+  const bots=S.members.filter(m=>m.bot);const r=S.rounds.find(x=>roundVisible(x)&&x.matches.some(m=>!esito(m)))||null;
+  return `<h2 class="pagetitle">Gestione lega</h2>
+  <p class="tip">Giornate, quote e risultati sono gli stessi per tutte le leghe e li gestisce l'amministratore del sito. La tua lega gioca dalla ${L.startRound}ª alla 38ª giornata.</p>
+  <section class="card"><h3>Partecipanti e richieste</h3><button class="btn sm sec" data-act="go" data-s="lega" style="align-self:flex-start">Apri la pagina Lega</button></section>
   <section class="card"><h3>Giocatori di prova</h3><p class="small muted" style="font-family:var(--f-ui)">Per testare la lega anche da solo: aggiungi giocatori fittizi e fagli giocare schedine casuali. In classifica hanno l'etichetta “prova”.</p>
    <div class="row"><button class="btn sm sec" data-act="addBot">Aggiungi giocatore di prova</button><span class="small muted">${bots.length} in lega</span></div>
-   ${ONLINE?`<p class="small muted" style="font-family:var(--f-ui)">Nota: i pronostici degli altri giocatori (anche di prova) restano nascosti fino al calcio d'inizio.</p>`:""}</section>
-  <section class="card"><h3>Partecipanti e richieste</h3><button class="btn sm sec" data-act="go" data-s="lega" style="align-self:flex-start">Apri la pagina Lega</button></section>`;
-}
-function teamSel(id,bind,val,cls){return `<select class="${cls}" id="${id}" data-bind="${bind}" aria-label="${cls==="h"?"Squadra di casa":"Squadra in trasferta"}"><option value="">—</option>${TEAMS.map(t=>`<option${t===val?" selected":""}>${t}</option>`).join("")}</select>`}
-function vEditor(L){
-  const d=S.draft;const saved=S.rounds.find(r=>r._id===S.editRid);
-  const vis=saved?roundVisible(saved,L):false;const ap=saved?autoPublishAt(saved,L):null;
-  const lockedAll=saved&&saved.matches.length&&saved.matches.every(m=>matchLocked(saved,m));
-  const fromCal=d.matches.some(m=>m.fixtureId);
-  const rows=d.matches.map((m,i)=>`<div class="ed-m${m.fixtureId?" cal":""}"><span class="n">${i+1}</span>${m.fixtureId
-   ?`<span class="h fx">${crest(m.home)}<span>${esc(m.home)}</span></span><span class="a fx">${crest(m.away)}<span>${esc(m.away)}</span></span><span class="k fx${m.kickoff?"":" tbd"}">${m.kickoff?`${fmtDow(m.kickoff)} · ${fmtTime(m.kickoff)}`:`Orario da definire · ${m.day?fmtDow(m.day):"data da definire"}`}</span>`
-   :`${teamSel(`ed-h${i}`,`draft.matches.${i}.home`,m.home,"h")}${teamSel(`ed-a${i}`,`draft.matches.${i}.away`,m.away,"a")}
-   <input class="k" type="datetime-local" id="ed-k${i}" data-bind="draft.matches.${i}.kickoff" value="${esc(m.kickoff)}" aria-label="Calcio d'inizio">`}
-   ${["o1","oX","o2"].map((k,j)=>`<input class="o ${k}" type="text" inputmode="decimal" id="ed-${k}${i}" data-bind="draft.matches.${i}.${k}" value="${esc(m[k])}" placeholder="${["1","X","2"][j]}" aria-label="Quota ${["1","X","2"][j]}">`).join("")}</div>`).join("");
-  const manual=d.matches.some(m=>!m.fixtureId);
-  const resRows=d.matches.map((m,i)=>{const sm=saved&&saved.matches[i];const lk=sm?matchLocked(saved,sm):false;const e=esito({hg:int(m.hg),ag:int(m.ag)});
-    if(m.fixtureId){const r=sm&&sm.hg!=null?sm:null;return `<div class="ed-res fix"><span><b>${esc(abbr(m.home))}</b> – <b>${esc(abbr(m.away))}</b></span><span class="score">${r?`${r.hg}-${r.ag}`:"–"}</span><span class="small muted">${r?"Esito "+esito(r):lk?"in attesa":"da giocare"}</span></div>`}
-    return `<div class="ed-res"><span><b>${esc(abbr(m.home))}</b> – <b>${esc(abbr(m.away))}</b></span><input type="number" min="0" id="ed-hg${i}" data-bind="draft.matches.${i}.hg" value="${esc(m.hg)}" ${lk?"":"disabled"} aria-label="Gol casa"><span>-</span><input type="number" min="0" id="ed-ag${i}" data-bind="draft.matches.${i}.ag" value="${esc(m.ag)}" ${lk?"":"disabled"} aria-label="Gol trasferta"><span class="small muted">${lk?(e?"Esito "+e:""):"da giocare"}</span></div>`}).join("");
-  return `<div class="row"><button class="btn ghost sm" data-act="closeEditor">‹ Giornate</button><h2 class="grow">${d.isNew?"Nuova giornata":`${d.n}ª giornata`}</h2>${saved?`<span class="chip ${roundStatus(saved,L).c}">${roundStatus(saved,L).t}</span>`:""}</div>
-  <section class="card"><h3>1 · Partite e quote</h3>
-  ${d.isNew?`<label class="small" for="ed-n" style="font-family:var(--f-ui)">Numero giornata</label><select id="ed-n" data-bind="draft.n" style="max-width:200px">${Array.from({length:38},(_,i)=>i+1).filter(n=>n>=L.startRound&&!S.rounds.some(r=>r.n===n)).map(n=>`<option value="${n}"${+d.n===n?" selected":""}>${n}ª</option>`).join("")}</select>`:""}
-  ${fromCal?`<p class="small muted" style="font-family:var(--f-ui)">Squadre e orari arrivano dal calendario Serie A e si aggiornano da soli${S.siteAdmin?" quando li cambi nel Pannello amministratore":""}. Tu inserisci le quote; i risultati arrivano dall'amministratore.</p>`:""}
-  <div class="row">${fromCal?"":`<button class="btn sm sec" data-act="fillExample">Genera giornata di esempio</button>`}<button class="btn sm sec" data-act="genOdds">Calcola quote indicative</button>${S.siteAdmin&&fromCal?`<button class="btn sm ghost" data-act="openPanel" data-n="${esc(d.n)}">Modifica orari e risultati</button>`:""}</div>
-  <div>${rows}</div>
-  ${(()=>{const n=d.matches.filter(m=>m.kickoff&&(m.hg===""||m.hg==null)&&+new Date(m.kickoff)<=Date.now()).length;return n?`<p class="banner">${n} partit${n===1?"a ha":"e hanno"} l'orario già passato: per quelle i pronostici sono bloccati.${fromCal?"":" Sposta gli orari nel futuro per farle giocare."}</p>`:""})()}
-  <p class="small muted" style="font-family:var(--f-ui)">${saved?(vis?"Quote visibili ai giocatori.":(ap?`Le quote diventano visibili in automatico il ${fmtFull(ap)}.`:"Inserisci gli orari per programmare la pubblicazione.")):"Salva per programmare la pubblicazione automatica."} I pronostici si chiudono partita per partita al calcio d'inizio.</p>
-  ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
-  <div class="row"><button class="btn sm" data-act="saveRound" data-how="save" ${S.busy?"disabled":""}>Salva</button>${!vis?`<button class="btn sm" data-act="saveRound" data-how="publish" ${S.busy?"disabled":""}>Salva e pubblica ora</button>`:""}
-   ${saved&&vis&&!lockedAll?`<button class="btn sm sec" data-act="saveRound" data-how="lock">Chiudi pronostici ora</button>`:""}
-   ${saved&&saved.lockedAt?`<button class="btn sm sec" data-act="saveRound" data-how="unlock">Riapri pronostici</button>`:""}</div></section>
-  ${saved?`<section class="card"><h3>2 · Giocatori di prova</h3><div class="row"><button class="btn sm sec" data-act="botPicks" data-r="${saved._id}">Schedine casuali per i giocatori di prova</button><button class="btn sm ghost" data-act="addBot">+ Giocatore di prova</button></div></section>
-  <section class="card"><h3>3 · Risultati finali</h3><p class="small muted" style="font-family:var(--f-ui)">${manual?"Si inseriscono dopo il calcio d'inizio. L'esito 1 · X · 2 si ricava dal punteggio e la classifica si aggiorna per tutti.":"Li inserisce l'amministratore del sito, una volta per tutte le leghe: la classifica si aggiorna da sola."}</p>
-   <div>${resRows}</div>
-   ${manual?`<div class="row"><button class="btn sm" data-act="saveRound" data-how="results" ${S.busy?"disabled":""}>Salva risultati</button>${saved.matches.some(m=>matchLocked(saved,m))?`<button class="btn sm sec" data-act="simResults">Simula risultati (test)</button>`:""}</div>`:""}</section>
-  <section class="card"><div class="row"><span class="grow small muted" style="font-family:var(--f-ui)">Eliminare la giornata cancella anche le schedine giocate.</span><button class="btn sm ${S.confirm==="del"?"danger":"sec"}" data-act="delRound">${S.confirm==="del"?"Conferma eliminazione":"Elimina giornata"}</button></div></section>`:""}`;
+   ${r?`<button class="btn sm sec" data-act="botPicks" data-r="${r._id}" style="align-self:flex-start">Schedine casuali per la ${r.n}ª giornata</button>`:`<p class="small muted" style="font-family:var(--f-ui)">Le schedine casuali si possono generare quando una giornata è pubblicata.</p>`}
+   ${ONLINE?`<p class="small muted" style="font-family:var(--f-ui)">Nota: i pronostici degli altri giocatori (anche di prova) restano nascosti fino al calcio d'inizio.</p>`:""}</section>`;
 }
 
 /* aggiorna countdown e blocchi ogni 30 s se non si sta scrivendo */

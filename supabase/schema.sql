@@ -1,10 +1,17 @@
 -- =====================================================================
 -- TOTOFANTA · schema del database (Supabase / Postgres)
--- Versione 3 · modalità Quote + calendario e risultati unici
+-- Versione 4 · modalità Quote · giornate, quote e risultati unici
 --
 -- Come usarlo: Supabase › SQL Editor › New query › incolla tutto › Run.
--- Si può rieseguire: le tabelle esistono già? Prima esegui reset.sql.
+-- Le tabelle esistono già? Prima esegui reset.sql.
 -- Dopo questo file esegui calendario-2026-27.sql (le 380 partite).
+--
+-- Come funziona:
+-- - Il calendario Serie A (squadre, orari, quote, risultati) è unico per
+--   tutte le leghe e lo gestisce l'amministratore del sito.
+-- - Ogni lega gioca le giornate dalla sua giornata di inizio alla 38ª.
+-- - Le quote di una giornata sono nascoste finché l'amministratore non la
+--   pubblica; i pronostici si chiudono al calcio d'inizio di ogni partita.
 -- =====================================================================
 
 create extension if not exists pgcrypto with schema extensions;
@@ -23,7 +30,6 @@ create table public.leagues (
   mode          text not null default 'quote' check (mode in ('quote')),
   tiebreak      text not null default 'best_day' check (tiebreak in ('best_day', 'highest_odd')),
   start_round   int  not null default 1 check (start_round between 1 and 38),
-  odds_timer_h  int  not null default 24 check (odds_timer_h between 1 and 168),
   admin_id      uuid not null references auth.users (id) on delete cascade,
   created_at    timestamptz not null default now(),
   constraint leagues_name_key_unique unique (name_key)
@@ -50,51 +56,58 @@ create table public.members (
 );
 create unique index members_nickname_unique on public.members (league_id, lower(btrim(nickname)));
 
--- Giornate di una lega.
-create table public.rounds (
-  id            uuid primary key default gen_random_uuid(),
-  league_id     uuid not null references public.leagues (id) on delete cascade,
-  n             int  not null check (n between 1 and 38),
-  published     boolean not null default false,
-  locked_at     timestamptz,
-  first_kickoff timestamptz,           -- aggiornato da trigger, serve al conto alla rovescia
-  updated_at    timestamptz not null default now(),
-  constraint rounds_unique unique (league_id, n)
+-- Amministratori del sito (pannello amministratore).
+create table public.site_admins (
+  user_id uuid primary key references auth.users (id) on delete cascade
 );
 
--- Partite di una giornata (10 per giornata), con quote e risultato.
-create table public.matches (
-  id        uuid primary key default gen_random_uuid(),
-  round_id  uuid not null references public.rounds (id) on delete cascade,
-  league_id uuid not null references public.leagues (id) on delete cascade,  -- impostato da trigger
-  pos       int  not null check (pos between 1 and 10),
-  home      text,
-  away      text,
-  kickoff   timestamptz,
-  o1        numeric(6,2) check (o1 is null or o1 > 1),
-  ox        numeric(6,2) check (ox is null or ox > 1),
-  o2        numeric(6,2) check (o2 is null or o2 > 1),
-  hg        int check (hg is null or hg >= 0),
-  ag        int check (ag is null or ag >= 0),
-  constraint matches_unique unique (round_id, pos),
-  constraint matches_result_complete check ((hg is null) = (ag is null))
+-- Calendario Serie A: accoppiamenti fissi, orari provvisori, risultati.
+create table public.fixtures (
+  id         int  primary key,                          -- giornata*100 + posizione (es. 1103)
+  n          int  not null check (n between 1 and 38),
+  pos        int  not null check (pos between 1 and 10),
+  home       text not null,
+  away       text not null,
+  kickoff    timestamptz,                               -- null = orario non ancora ufficiale
+  day        date,                                      -- data indicativa della partita
+  hg         int check (hg is null or hg >= 0),
+  ag         int check (ag is null or ag >= 0),
+  updated_at timestamptz not null default now(),
+  constraint fixtures_unique unique (n, pos),
+  constraint fixtures_teams check (home <> away),
+  constraint fixtures_result_complete check ((hg is null) = (ag is null))
 );
 
--- Pronostici: una riga per giocatore e partita.
+-- Quote 1X2 (tabella a parte: restano nascoste finché la giornata non è pubblicata).
+create table public.odds (
+  fixture_id int primary key references public.fixtures (id) on delete cascade,
+  o1         numeric(6,2) not null check (o1 > 1),
+  ox         numeric(6,2) not null check (ox > 1),
+  o2         numeric(6,2) not null check (o2 > 1),
+  updated_at timestamptz not null default now()
+);
+
+-- Giornate: pubblicazione delle quote (una riga per giornata, 1–38).
+create table public.calendar_rounds (
+  n            int primary key check (n between 1 and 38),
+  published    boolean not null default false,
+  published_at timestamptz
+);
+insert into public.calendar_rounds (n) select g from generate_series(1, 38) g;
+
+-- Pronostici: una riga per giocatore e partita del calendario.
 create table public.picks (
   member_id  uuid not null references public.members (id) on delete cascade,
-  match_id   uuid not null references public.matches (id) on delete cascade,
+  fixture_id int  not null references public.fixtures (id) on delete cascade,
   league_id  uuid not null references public.leagues (id) on delete cascade,  -- impostato da trigger
   pick       text not null check (pick in ('1', 'X', '2')),
   updated_at timestamptz not null default now(),
-  primary key (member_id, match_id)
+  primary key (member_id, fixture_id)
 );
 
 create index members_user_idx on public.members (user_id);
-create index rounds_league_idx on public.rounds (league_id);
-create index matches_league_idx on public.matches (league_id);
 create index picks_league_idx on public.picks (league_id);
-create index picks_match_idx on public.picks (match_id);
+create index picks_fixture_idx on public.picks (fixture_id);
 
 -- ---------------------------------------------------------------------
 -- Funzioni di supporto (usate dalle regole di accesso)
@@ -119,30 +132,33 @@ language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.leagues l where l.id = lid and l.admin_id = auth.uid());
 $$;
 
--- Le quote di questa giornata sono visibili ai giocatori?
--- Sì se l'admin le ha pubblicate, oppure se le 10 partite sono complete
--- ed è scattato l'anticipo scelto (odds_timer_h ore prima della prima partita).
-create or replace function public.round_visible(rid uuid) returns boolean
+-- È amministratore del sito?
+create or replace function public.is_site_admin() returns boolean
 language sql stable security definer set search_path = '' as $$
-  select coalesce(
-    (select r.published
-         or ( (select count(*) from public.matches m
-               where m.round_id = r.id and m.home is not null and m.away is not null
-                 and m.kickoff is not null and m.o1 > 1 and m.ox > 1 and m.o2 > 1) = 10
-              and now() >= r.first_kickoff - make_interval(hours => l.odds_timer_h) )
-       from public.rounds r join public.leagues l on l.id = r.league_id
-      where r.id = rid),
-    false);
+  select exists (select 1 from public.site_admins s where s.user_id = auth.uid());
 $$;
 
--- La partita è iniziata (o l'admin ha chiuso i pronostici della giornata)?
-create or replace function public.match_locked(mid uuid) returns boolean
+-- Le quote di questa giornata sono pubblicate?
+create or replace function public.round_published(rn int) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce((select c.published from public.calendar_rounds c where c.n = rn), false);
+$$;
+
+-- La partita è iniziata?
+create or replace function public.fixture_locked(fid int) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce((select f.kickoff is not null and now() >= f.kickoff from public.fixtures f where f.id = fid), true);
+$$;
+
+-- Si può ancora pronosticare? (giornata pubblicata, quote presenti, partita non iniziata)
+create or replace function public.fixture_open(fid int) returns boolean
 language sql stable security definer set search_path = '' as $$
   select coalesce(
-    (select r.locked_at is not null or (m.kickoff is not null and now() >= m.kickoff)
-       from public.matches m join public.rounds r on r.id = m.round_id
-      where m.id = mid),
-    true);
+    (select f.kickoff is not null and now() < f.kickoff
+            and public.round_published(f.n)
+            and exists (select 1 from public.odds o where o.fixture_id = f.id)
+       from public.fixtures f where f.id = fid),
+    false);
 $$;
 
 -- Questo partecipante è l'utente collegato (e approvato)?
@@ -159,52 +175,62 @@ language sql stable security definer set search_path = '' as $$
                  where m.id = mid and m.is_bot and l.admin_id = auth.uid());
 $$;
 
--- Si può ancora pronosticare questa partita? (quote pubblicate e partita non iniziata)
-create or replace function public.match_open(mid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select coalesce((select public.round_visible(m.round_id) and not public.match_locked(m.id)
-                     from public.matches m where m.id = mid), false);
-$$;
-
 -- ---------------------------------------------------------------------
 -- Trigger
 -- ---------------------------------------------------------------------
 
--- La partita eredita la lega dalla giornata.
-create or replace function public.matches_set_league() returns trigger
-language plpgsql security definer set search_path = '' as $$
+-- Il risultato si può inserire solo a partita iniziata.
+create or replace function public.fixtures_touch() returns trigger
+language plpgsql set search_path = '' as $$
 begin
-  select r.league_id into new.league_id from public.rounds r where r.id = new.round_id;
+  if new.hg is not null and (new.kickoff is null or new.kickoff > now()) then
+    raise exception 'Il risultato di %–% si inserisce dopo il calcio d''inizio', new.home, new.away;
+  end if;
+  new.updated_at := now();
   return new;
 end $$;
-create trigger matches_set_league before insert or update of round_id on public.matches
-  for each row execute function public.matches_set_league();
+create trigger fixtures_touch before update on public.fixtures
+  for each row execute function public.fixtures_touch();
 
--- Tiene aggiornato l'orario della prima partita della giornata.
-create or replace function public.rounds_refresh_first_kickoff() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare rid uuid := coalesce(new.round_id, old.round_id);
+create or replace function public.odds_touch() returns trigger
+language plpgsql set search_path = '' as $$
+begin new.updated_at := now(); return new; end $$;
+create trigger odds_touch before insert or update on public.odds
+  for each row execute function public.odds_touch();
+
+-- Si pubblica solo una giornata completa: 10 partite con orario e quote.
+create or replace function public.calendar_rounds_check() returns trigger
+language plpgsql set search_path = '' as $$
+declare ok int;
 begin
-  update public.rounds r
-     set first_kickoff = (select min(m.kickoff) from public.matches m where m.round_id = rid),
-         updated_at = now()
-   where r.id = rid;
-  return null;
+  if new.published and not old.published then
+    select count(*) into ok from public.fixtures f join public.odds o on o.fixture_id = f.id
+     where f.n = new.n and f.kickoff is not null;
+    if ok < 10 then
+      raise exception 'Per pubblicare la %ª giornata servono orari e quote di tutte le 10 partite (complete: %)', new.n, ok;
+    end if;
+    new.published_at := now();
+  elsif not new.published then
+    new.published_at := null;
+  end if;
+  return new;
 end $$;
-create trigger matches_first_kickoff after insert or update or delete on public.matches
-  for each row execute function public.rounds_refresh_first_kickoff();
+create trigger calendar_rounds_check before update on public.calendar_rounds
+  for each row execute function public.calendar_rounds_check();
 
--- Il pronostico eredita la lega dalla partita; partecipante e partita devono essere della stessa lega.
+-- Il pronostico eredita la lega dal partecipante; la partita deve essere
+-- di una giornata che la lega gioca (dalla giornata di inizio in poi).
 create or replace function public.picks_set_league() returns trigger
 language plpgsql security definer set search_path = '' as $$
-declare ml uuid; mm uuid;
+declare lid uuid; sr int; rn int;
 begin
-  select m.league_id into ml from public.matches m where m.id = new.match_id;
-  select x.league_id into mm from public.members x where x.id = new.member_id;
-  if ml is null or mm is null or ml <> mm then
+  select m.league_id, l.start_round into lid, sr
+    from public.members m join public.leagues l on l.id = m.league_id where m.id = new.member_id;
+  select f.n into rn from public.fixtures f where f.id = new.fixture_id;
+  if lid is null or rn is null or rn < sr then
     raise exception 'Pronostico non valido per questa lega';
   end if;
-  new.league_id := ml;
+  new.league_id := lid;
   new.updated_at := now();
   return new;
 end $$;
@@ -214,12 +240,14 @@ create trigger picks_set_league before insert or update on public.picks
 -- ---------------------------------------------------------------------
 -- Regole di accesso (Row Level Security)
 -- ---------------------------------------------------------------------
-alter table public.leagues        enable row level security;
-alter table public.league_secrets enable row level security;  -- nessuna regola: illeggibile
-alter table public.members        enable row level security;
-alter table public.rounds         enable row level security;
-alter table public.matches        enable row level security;
-alter table public.picks          enable row level security;
+alter table public.leagues         enable row level security;
+alter table public.league_secrets  enable row level security;  -- nessuna regola: illeggibile
+alter table public.members         enable row level security;
+alter table public.site_admins     enable row level security;
+alter table public.fixtures        enable row level security;
+alter table public.odds            enable row level security;
+alter table public.calendar_rounds enable row level security;
+alter table public.picks           enable row level security;
 
 -- Leghe: le vede chi ci è iscritto (anche in attesa); le modifica/elimina l'admin.
 create policy leagues_select on public.leagues for select to authenticated
@@ -243,34 +271,46 @@ create policy members_delete on public.members for delete to authenticated
   using ( (public.is_admin(league_id) and user_id is distinct from auth.uid())
        or (user_id = auth.uid() and not public.is_admin(league_id)) );
 
--- Giornate: le vedono gli iscritti approvati; le gestisce l'admin.
-create policy rounds_select on public.rounds for select to authenticated
-  using (public.is_member(league_id) or public.is_admin(league_id));
-create policy rounds_write on public.rounds for all to authenticated
-  using (public.is_admin(league_id)) with check (public.is_admin(league_id));
+-- Amministratori del sito: ognuno vede solo la propria riga (serve al sito per mostrare il pannello).
+create policy site_admins_select on public.site_admins for select to authenticated
+  using (user_id = auth.uid());
 
--- Partite e quote: visibili ai giocatori solo quando la giornata è pubblicata.
-create policy matches_select on public.matches for select to authenticated
-  using (public.is_admin(league_id) or (public.is_member(league_id) and public.round_visible(round_id)));
-create policy matches_write on public.matches for all to authenticated
-  using (public.is_admin(league_id)) with check (public.is_admin(league_id));
+-- Calendario: lo leggono tutti quelli che hanno fatto l'accesso;
+-- date, orari e risultati li cambia l'amministratore del sito.
+create policy fixtures_select on public.fixtures for select to authenticated using (true);
+create policy fixtures_update on public.fixtures for update to authenticated
+  using (public.is_site_admin()) with check (public.is_site_admin());
+revoke insert, update, delete on public.fixtures from authenticated, anon;
+grant  update (kickoff, day, hg, ag) on public.fixtures to authenticated;
+
+-- Quote: visibili a tutti solo a giornata pubblicata; l'amministratore le vede e le scrive sempre.
+create policy odds_select on public.odds for select to authenticated
+  using (public.is_site_admin() or public.round_published((select f.n from public.fixtures f where f.id = fixture_id)));
+create policy odds_write on public.odds for all to authenticated
+  using (public.is_site_admin()) with check (public.is_site_admin());
+
+-- Pubblicazione delle giornate: la leggono tutti, la cambia l'amministratore.
+create policy calendar_rounds_select on public.calendar_rounds for select to authenticated using (true);
+create policy calendar_rounds_update on public.calendar_rounds for update to authenticated
+  using (public.is_site_admin()) with check (public.is_site_admin());
+revoke insert, delete on public.calendar_rounds from authenticated, anon;
 
 -- Pronostici:
 --  · i propri si vedono sempre;
 --  · quelli degli altri solo dopo il calcio d'inizio della partita;
---  · si scrivono solo prima del calcio d'inizio e a quote pubblicate;
---  · l'admin può scrivere quelli dei giocatori di prova.
+--  · si scrivono solo prima del calcio d'inizio e a giornata pubblicata;
+--  · l'admin della lega può scrivere quelli dei giocatori di prova.
 create policy picks_select on public.picks for select to authenticated
   using ( public.owns_member(member_id)
-       or (public.is_member(league_id) and public.match_locked(match_id))
+       or (public.is_member(league_id) and public.fixture_locked(fixture_id))
        or public.admin_of_bot(member_id) );
 create policy picks_insert on public.picks for insert to authenticated
-  with check ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.match_open(match_id)) );
+  with check ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.fixture_open(fixture_id)) );
 create policy picks_update on public.picks for update to authenticated
-  using      ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.match_open(match_id)) )
-  with check ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.match_open(match_id)) );
+  using      ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.fixture_open(fixture_id)) )
+  with check ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.fixture_open(fixture_id)) );
 create policy picks_delete on public.picks for delete to authenticated
-  using ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.match_open(match_id)) );
+  using ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.fixture_open(fixture_id)) );
 
 -- ---------------------------------------------------------------------
 -- Funzioni chiamate dal sito
@@ -279,7 +319,7 @@ create policy picks_delete on public.picks for delete to authenticated
 -- Crea una lega con password cifrata e codice d'invito; l'autore diventa admin.
 create or replace function public.create_league(
   p_name text, p_type text, p_password text, p_tiebreak text,
-  p_start_round int, p_odds_timer_h int, p_logo text, p_nickname text
+  p_start_round int, p_logo text, p_nickname text
 ) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare lid uuid; code text;
@@ -291,8 +331,8 @@ begin
   if exists (select 1 from public.leagues l where l.name_key = lower(btrim(p_name))) then
     raise exception 'Esiste già una lega con questo nome';
   end if;
-  insert into public.leagues (name, type, tiebreak, start_round, odds_timer_h, logo, admin_id)
-  values (btrim(p_name), p_type, p_tiebreak, p_start_round, p_odds_timer_h, p_logo, auth.uid())
+  insert into public.leagues (name, type, tiebreak, start_round, logo, admin_id)
+  values (btrim(p_name), p_type, p_tiebreak, p_start_round, p_logo, auth.uid())
   returning id into lid;
   loop
     code := upper(substr(translate(encode(extensions.gen_random_bytes(8), 'base64'), '+/=0O1Il', ''), 1, 6));
@@ -350,157 +390,15 @@ language sql stable security definer set search_path = '' as $$
 $$;
 
 -- Le funzioni le può chiamare solo chi ha fatto l'accesso.
-revoke execute on function public.create_league(text, text, text, text, int, int, text, text) from public, anon;
+revoke execute on function public.create_league(text, text, text, text, int, text, text) from public, anon;
 revoke execute on function public.join_league(text, text, text, text) from public, anon;
 revoke execute on function public.get_invite_code(uuid) from public, anon;
-grant  execute on function public.create_league(text, text, text, text, int, int, text, text) to authenticated;
+grant  execute on function public.create_league(text, text, text, text, int, text, text) to authenticated;
 grant  execute on function public.join_league(text, text, text, text) to authenticated;
 grant  execute on function public.get_invite_code(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- Aggiornamenti in tempo reale (il sito si aggiorna quando un altro gioca)
 -- ---------------------------------------------------------------------
-alter publication supabase_realtime add table public.leagues, public.members, public.rounds, public.matches, public.picks;
-
--- =====================================================================
--- Versione 2: calendario (identico a migrazione-02-calendario.sql)
--- =====================================================================
--- ---------------------------------------------------------------------
--- Calendario: accoppiamenti fissi, orari provvisori
--- ---------------------------------------------------------------------
-create table public.fixtures (
-  id         int  primary key,                          -- giornata*100 + posizione (es. 1103)
-  n          int  not null check (n between 1 and 38),
-  pos        int  not null check (pos between 1 and 10),
-  home       text not null,
-  away       text not null,
-  kickoff    timestamptz,                               -- null = orario non ancora ufficiale
-  day        date,                                      -- data indicativa della partita
-  updated_at timestamptz not null default now(),
-  constraint fixtures_unique unique (n, pos),
-  constraint fixtures_teams check (home <> away)
-);
-
--- Gestori del calendario (possono cambiare date e orari per tutte le leghe).
-create table public.site_admins (
-  user_id uuid primary key references auth.users (id) on delete cascade
-);
-
--- Le partite di una lega possono puntare a una partita del calendario.
-alter table public.matches add column fixture_id int references public.fixtures (id);
-create index matches_fixture_idx on public.matches (fixture_id);
-
-create or replace function public.is_site_admin() returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.site_admins s where s.user_id = auth.uid());
-$$;
-
--- Una partita collegata al calendario prende squadre e orario dal calendario
--- (l'admin della lega non li può cambiare) e deve essere della stessa giornata.
-create or replace function public.matches_from_fixture() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare f public.fixtures; rn int;
-begin
-  if new.fixture_id is null then return new; end if;
-  select * into f from public.fixtures x where x.id = new.fixture_id;
-  select r.n into rn from public.rounds r where r.id = new.round_id;
-  if f.n is distinct from rn then
-    raise exception 'La partita del calendario non appartiene alla %ª giornata', rn;
-  end if;
-  new.home := f.home; new.away := f.away; new.kickoff := f.kickoff;
-  return new;
-end $$;
-create trigger matches_from_fixture before insert or update on public.matches
-  for each row execute function public.matches_from_fixture();
-
--- Quando il gestore cambia un orario, si aggiorna in tutte le leghe.
-create or replace function public.fixtures_touch() returns trigger
-language plpgsql set search_path = '' as $$
-begin new.updated_at := now(); return new; end $$;
-create trigger fixtures_touch before update on public.fixtures
-  for each row execute function public.fixtures_touch();
-
-create or replace function public.fixtures_propagate() returns trigger
-language plpgsql security definer set search_path = '' as $$
-begin
-  update public.matches m set kickoff = new.kickoff, home = new.home, away = new.away
-   where m.fixture_id = new.id
-     and (m.kickoff is distinct from new.kickoff or m.home is distinct from new.home or m.away is distinct from new.away);
-  return null;
-end $$;
-create trigger fixtures_propagate after update on public.fixtures
-  for each row execute function public.fixtures_propagate();
-
--- Regole di accesso
-alter table public.fixtures    enable row level security;
-alter table public.site_admins enable row level security;
-
--- Calendario: lo leggono tutti quelli che hanno fatto l'accesso; date e orari li cambia il gestore.
-create policy fixtures_select on public.fixtures for select to authenticated using (true);
-create policy fixtures_update on public.fixtures for update to authenticated
-  using (public.is_site_admin()) with check (public.is_site_admin());
--- Squadre e numero di giornata non si toccano dal sito (solo da SQL Editor).
-revoke update on public.fixtures from authenticated;
-grant  update (kickoff, day) on public.fixtures to authenticated;
-
--- Gestori: ognuno vede solo la propria riga (serve al sito per mostrare la modifica).
-create policy site_admins_select on public.site_admins for select to authenticated
-  using (user_id = auth.uid());
-
-alter publication supabase_realtime add table public.fixtures;
-
--- =====================================================================
--- Versione 3: risultati unici (identico a migrazione-03-risultati.sql)
--- =====================================================================
--- Risultati nel calendario
-alter table public.fixtures
-  add column hg int check (hg is null or hg >= 0),
-  add column ag int check (ag is null or ag >= 0),
-  add constraint fixtures_result_complete check ((hg is null) = (ag is null));
-
--- Il risultato si può inserire solo a partita iniziata.
-create or replace function public.fixtures_touch() returns trigger
-language plpgsql set search_path = '' as $$
-begin
-  if new.hg is not null and (new.kickoff is null or new.kickoff > now()) then
-    raise exception 'Il risultato di %–% si inserisce dopo il calcio d''inizio', new.home, new.away;
-  end if;
-  new.updated_at := now();
-  return new;
-end $$;
-
--- La partita della lega prende dal calendario anche il risultato.
-create or replace function public.matches_from_fixture() returns trigger
-language plpgsql security definer set search_path = '' as $$
-declare f public.fixtures; rn int;
-begin
-  if new.fixture_id is null then return new; end if;
-  select * into f from public.fixtures x where x.id = new.fixture_id;
-  select r.n into rn from public.rounds r where r.id = new.round_id;
-  if f.n is distinct from rn then
-    raise exception 'La partita del calendario non appartiene alla %ª giornata', rn;
-  end if;
-  new.home := f.home; new.away := f.away; new.kickoff := f.kickoff;
-  new.hg := f.hg; new.ag := f.ag;
-  return new;
-end $$;
-
--- Orari e risultati cambiati dall'amministratore arrivano in tutte le leghe.
-create or replace function public.fixtures_propagate() returns trigger
-language plpgsql security definer set search_path = '' as $$
-begin
-  update public.matches m
-     set kickoff = new.kickoff, home = new.home, away = new.away, hg = new.hg, ag = new.ag
-   where m.fixture_id = new.id
-     and (m.kickoff is distinct from new.kickoff or m.home is distinct from new.home or m.away is distinct from new.away
-          or m.hg is distinct from new.hg or m.ag is distinct from new.ag);
-  return null;
-end $$;
-
--- L'amministratore del sito può cambiare date, orari e risultati.
-revoke update on public.fixtures from authenticated;
-grant  update (kickoff, day, hg, ag) on public.fixtures to authenticated;
-
--- Elimina le giornate di prova create a mano (nessuna partita collegata al calendario).
-delete from public.rounds r
- where not exists (select 1 from public.matches m where m.round_id = r.id and m.fixture_id is not null);
+alter publication supabase_realtime add table
+  public.leagues, public.members, public.picks, public.fixtures, public.odds, public.calendar_rounds;

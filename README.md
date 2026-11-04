@@ -4,18 +4,22 @@ Gioco di pronostici sulla Serie A tra amici. Si crea una lega, ogni giornata si 
 
 Versione attuale: prototipo con la sola modalità **Quote**.
 
+## Come funziona
+
+- Il calendario Serie A 2026/27 (squadre, orari, quote, risultati) è **unico per tutte le leghe** e lo gestisce l'**amministratore del sito** dal Pannello amministratore.
+- Ogni lega gioca in automatico dalla sua giornata di inizio alla 38ª: l'admin della lega gestisce solo i partecipanti (e i giocatori di prova).
+- Le quote di una giornata sono nascoste finché l'amministratore non la pubblica; i pronostici si chiudono al calcio d'inizio di ogni partita.
+
 ## Struttura
 
 ```
 index.html            pagina dell'app
 css/style.css         grafica (stile dei mockup Figma)
 js/config.js          indirizzo e chiave pubblica del progetto Supabase
-js/app.js             logica del gioco: login, leghe, giornate, pronostici, classifica
+js/app.js             logica del gioco: login, leghe, pronostici, classifica, pannello amministratore
 js/calendario.js      calendario Serie A 2026/27 (usato dalla modalità prova)
 supabase/schema.sql   tabelle, regole di sicurezza (RLS) e funzioni del database
 supabase/calendario-2026-27.sql   le 380 partite della Serie A 2026/27
-supabase/migrazione-02-calendario.sql   aggiunge il calendario a un database creato con la versione 1
-supabase/migrazione-03-risultati.sql    risultati unici per tutte le leghe (dopo la 02)
 supabase/reset.sql    azzera il database (cancella tutto lo schema public)
 ```
 
@@ -24,17 +28,17 @@ supabase/reset.sql    azzera il database (cancella tutto lo schema public)
 1. SQL Editor › New query: incolla `supabase/reset.sql` › Run (solo se il progetto contiene vecchie tabelle).
 2. New query: incolla `supabase/schema.sql` › Run.
 3. New query: incolla `supabase/calendario-2026-27.sql` › Run.
-4. Amministratore del sito (pannello amministratore: orari e risultati per tutte le leghe):
+4. Amministratore del sito:
    `insert into public.site_admins select id from auth.users where email = 'TUA-EMAIL';`
 5. Authentication › URL Configuration: Site URL `https://gattojr.github.io/Totofanta/`, e la stessa in Redirect URLs.
 6. Per i test: Authentication › Sign In / Providers › Email › disattiva *Confirm email* (il servizio email gratuito di Supabase invia pochissime mail all'ora).
 
 Regole principali garantite dal database:
 - le leghe le vede solo chi ne fa parte; password e codice d'invito non sono leggibili;
-- le quote sono nascoste finché la giornata non è pubblicata (a mano o all'anticipo scelto);
+- calendario, quote, risultati e pubblicazione delle giornate li cambia solo l'amministratore del sito;
+- una giornata si pubblica solo con orario e quote di tutte le 10 partite; prima della pubblicazione le quote non sono leggibili;
 - i pronostici si possono cambiare solo prima del calcio d'inizio e quelli degli altri si vedono solo dopo;
-- risultati, giornate e iscrizioni li gestisce solo l'admin della lega;
-- squadre, orari e risultati vengono dal calendario unico: l'admin di lega mette solo le quote; date, orari e risultati li cambia solo l'amministratore del sito (dal Pannello amministratore) e valgono per tutte le leghe;
+- si pronosticano solo le giornate dalla giornata di inizio della lega in poi;
 - il risultato si può inserire solo dopo il calcio d'inizio.
 
 ## Provarlo
@@ -42,10 +46,10 @@ Regole principali garantite dal database:
 - Online: GitHub Pages, dal ramo `main`.
 - In locale: apri `index.html` nel browser, oppure `python3 -m http.server` nella cartella e vai su http://localhost:8000.
 
-Con `js/config.js` compilato il sito usa Supabase (login con email e password, dati condivisi). Se i campi sono vuoti gira in **modalità prova**: i dati restano nel browser e dal menu si può cambiare giocatore per simulare più partecipanti.
+Con `js/config.js` compilato il sito usa Supabase (login con email e password, dati condivisi). Se i campi sono vuoti gira in **modalità prova**: i dati restano nel browser, si è amministratori del sito e dal menu si può cambiare giocatore per simulare più partecipanti.
 
 ## Prossimi passi
 
-- Quote e risultati automatici da un servizio esterno.
+- Quote e risultati automatici da un servizio esterno (API).
 - Modalità Punteggi fissi e Risultati esatti.
 - Competizioni parallele (Miglior giornata, Battle Royale, Sopravvissuto).

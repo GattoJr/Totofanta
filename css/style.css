@@ -212,12 +212,13 @@ tr.me td{background:var(--blue-soft)}
 .cal-m input{flex:0 1 210px;padding:7px 8px;font-size:14px}
 
 /* ---- Pannello amministratore ---- */
-.cal-m .score,.ed-res .score{font-family:var(--f-num);font-weight:700;background:var(--field);border-radius:6px;padding:2px 8px}
-.ed-res.fix{grid-template-columns:minmax(0,1fr) auto 110px}
+.cal-m .score{font-family:var(--f-num);font-weight:700;background:var(--field);border-radius:6px;padding:2px 8px}
 .adm-m{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
 .adm-m:first-child{border-top:0}
 .adm-m .t{grid-column:1/-1;display:flex;align-items:center;gap:6px;min-width:0;font-family:var(--f-ui);font-weight:500;font-size:15px}
-.adm-m input[type=datetime-local]{padding:7px 8px;font-size:14px;min-width:0}
+.adm-m .k{grid-column:1/-1;padding:7px 8px;font-size:14px;min-width:0}
+.adm-m .od{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.adm-m .od input{text-align:center;font-family:var(--f-num);padding:7px 4px;min-width:0}
 .adm-m .sc{display:flex;align-items:center;gap:4px}
-.adm-m .sc input{width:52px;text-align:center;font-family:var(--f-num);padding:7px}
+.adm-m .sc input{width:48px;text-align:center;font-family:var(--f-num);padding:7px 4px}
 .adm-m .st{grid-column:1/-1}
