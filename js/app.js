@@ -444,7 +444,9 @@ async function saveRound(how){
     const saved=S.rounds.find(r=>r._id===rId);
     S.draft.published=body.published;S.draft.lockedAt=body.lockedAt;S.draft.isNew=false;S.editRid=rId;
     if(saved)S.draft.matches.forEach((m,i)=>{if(saved.matches[i])m.id=saved.matches[i].id});
-    toast(how==="publish"?"Quote pubblicate":how==="lock"?"Pronostici chiusi":how==="results"?"Risultati salvati":"Giornata salvata")});
+    const past=matches.filter(m=>m.kickoff&&m.hg==null&&+new Date(m.kickoff)<=Date.now()).length;
+    const msg=how==="publish"?"Quote pubblicate":how==="lock"?"Pronostici chiusi":how==="results"?"Risultati salvati":"Giornata salvata";
+    toast(past&&how!=="lock"&&how!=="results"?`${msg}. Attenzione: ${past} partit${past===1?"a ha":"e hanno"} l'orario già passato, quindi i pronostici sono bloccati`:msg)});
 }
 
 /* ===================== Eventi ===================== */
@@ -638,7 +640,7 @@ function vPicks(L){
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
       return `<button class="${cls}" ${locked?"disabled":""} data-act="pick" data-r="${r._id}" data-m="${m.id}" data-p="${k}" aria-pressed="${sel}" aria-label="${esc(m.home)}–${esc(m.away)}: ${k}, quota ${o?o.toFixed(2):"non disponibile"}"><span class="s">${k}</span><span class="o">${o?o.toFixed(2):"—"}</span></button>`};
     const mid=e?`<span class="score">${m.hg}-${m.ag}</span>`:"VS";
-    const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(locked?`<span class="chip">${p?"Bloccata · in attesa del risultato":"Bloccata · nessun pronostico"}</span>`:"");
+    const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(locked?`<span class="chip">${r.lockedAt?"Chiusa dall'admin":`Iniziata alle ${fmtTime(m.kickoff)}`} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
     return `<section class="card match"><div class="date">${fmtFull(m.kickoff)}</div><div class="line">${crest(m.home,1)}<span class="h">${esc(m.home)}</span><span class="vs">${mid}</span><span class="a">${esc(m.away)}</span>${crest(m.away,1)}</div><div class="picks">${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div><div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div></div>
@@ -745,6 +747,7 @@ function vEditor(L){
   ${d.isNew?`<label class="small" for="ed-n" style="font-family:var(--f-ui)">Numero giornata</label><select id="ed-n" data-bind="draft.n" style="max-width:200px">${Array.from({length:38},(_,i)=>i+1).filter(n=>n>=L.startRound&&!S.rounds.some(r=>r.n===n)).map(n=>`<option value="${n}"${+d.n===n?" selected":""}>${n}ª</option>`).join("")}</select>`:""}
   <div class="row"><button class="btn sm sec" data-act="fillExample">Genera giornata di esempio</button><button class="btn sm sec" data-act="genOdds">Calcola quote indicative</button></div>
   <div>${rows}</div>
+  ${(()=>{const n=d.matches.filter(m=>m.kickoff&&(m.hg===""||m.hg==null)&&+new Date(m.kickoff)<=Date.now()).length;return n?`<p class="banner">${n} partit${n===1?"a ha":"e hanno"} l'orario già passato: per quelle i pronostici sono bloccati. Sposta gli orari nel futuro per farle giocare.</p>`:""})()}
   <p class="small muted" style="font-family:var(--f-ui)">${saved?(vis?"Quote visibili ai giocatori.":(ap?`Le quote diventano visibili in automatico il ${fmtFull(ap)}.`:"Inserisci gli orari per programmare la pubblicazione.")):"Salva per programmare la pubblicazione automatica."} I pronostici si chiudono partita per partita al calcio d'inizio.</p>
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
   <div class="row"><button class="btn sm" data-act="saveRound" data-how="save" ${S.busy?"disabled":""}>Salva</button>${!vis?`<button class="btn sm" data-act="saveRound" data-how="publish" ${S.busy?"disabled":""}>Salva e pubblica ora</button>`:""}
