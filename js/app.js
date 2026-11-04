@@ -691,7 +691,9 @@ function vMyLeagues(){
 
 function leagueSelect(){
   const mine=myLeagues();
-  return `<div><div class="sect" style="margin-bottom:6px">Lega</div><div class="leaguesel"><select id="league-sel" aria-label="Lega attiva">${mine.map(L=>`<option value="${L._id}"${L._id===S.lid?" selected":""}>${esc(L.name)}</option>`).join("")}</select></div></div>`;
+  /* una riga: "Lega" a sinistra, nome a destra; con più leghe la freccia apre il menu a tendina */
+  const L=league();const many=mine.length>1;
+  return `<div class="leaguerow"><span class="sect">Lega</span><label class="lname${many?" many":""}"><span>${esc(L?.name||"")}</span>${many?`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><select id="league-sel" aria-label="Cambia lega">${mine.map(x=>`<option value="${x._id}"${x._id===S.lid?" selected":""}>${esc(x.name)}</option>`).join("")}</select>`:""}</label></div>`;
 }
 function vLeagueScreen(L){
   const me=myMember();
@@ -714,8 +716,10 @@ function vHome(L){
   const r=currentRound();
   let html=leagueSelect();
   /* riepilogo classifica (2.2): sempre visibile, anche prima dei risultati */
-  html+=`<section class="card"><div class="stats"><div><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></div><div><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></div><div><b>${mine&&mine.mp?f2(mine.mp):"0.00"}</b><span>Miglior punteggio</span></div></div><button class="btn wide" data-act="go" data-s="classifica">Classifica</button></section>`;
-  html+=`<section class="card">${statusCard(L,r)}</section>`;
+  const done=r&&roundVisible(r)&&!roundLocked(r)&&r.matches.length&&r.matches.every(m=>(pickDoc(r._id,S.uid)?.picks||{})[m.id]);
+  html+=`<section class="card${done?" complete":""}">${statusCard(L,r)}</section>`;
+  /* riepilogo classifica (2.2): sempre visibile; tutta la card porta alla classifica */
+  html+=`<button type="button" class="card statcard" data-act="go" data-s="classifica" aria-label="Vai alla classifica"><div class="stats"><div><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></div><div><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></div><div><b>${mine&&mine.mp?f2(mine.mp):"0.00"}</b><span>Miglior punteggio</span></div></div><span class="golink">Vai alla classifica ›</span></button>`;
   /* le partite si vedono sempre (gli accoppiamenti sono fissi), anche prima che le quote siano pubblicate */
   if(r&&r.matches.length){
     const upcoming=r.matches.filter(m=>!esito(m));const show=upcoming.length?upcoming:r.matches;
@@ -732,9 +736,10 @@ function statusCard(L,r){
   if(!open.length){
     if(roundDone(r))return `<p class="cta-title">${r.n}ª giornata conclusa</p><p class="count">Hai fatto <b>${f2(roundScore(r,S.uid).pts)}</b> punti</p><button class="btn wide" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
     return `<p class="cta-title">${r.n}ª giornata in corso</p><button class="btn wide" data-act="go" data-s="pronostici">Segui i tuoi pronostici</button>`}
-  const pk=pickDoc(r._id,S.uid)?.picks||{};const missing=open.filter(m=>!pk[m.id]);
-  if(missing.length)return `<p class="cta-title">Inserisci i tuoi pronostici per la ${r.n}ª giornata</p><p class="count small muted">${missing.length} partit${missing.length===1?"a":"e"} senza pronostico</p><button class="btn wide" data-act="go" data-s="pronostici">Inserisci i tuoi pronostici</button>${kickTimer(r,"inserire")}`;
-  return `<p class="cta-title">Hai già inserito i tuoi pronostici per la ${r.n}ª giornata</p><button class="btn wide" data-act="go" data-s="pronostici">Modifica i tuoi pronostici</button>${kickTimer(r,"modificare")}`;
+  const pk=pickDoc(r._id,S.uid)?.picks||{};const tot=r.matches.length;const n=r.matches.filter(m=>pk[m.id]).length;
+  const bar=`<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${tot}" aria-valuenow="${n}" aria-label="Pronostici inseriti"><div class="ptxt"><b>${n}/${tot}</b> pronostici</div><div class="pbar"><span style="width:${tot?Math.round(n/tot*100):0}%"></span></div></div>`;
+  if(n<tot)return `<p class="cta-title">Inserisci i tuoi pronostici per la ${r.n}ª giornata</p>${bar}<button class="btn wide" data-act="go" data-s="pronostici">Inserisci i tuoi pronostici</button>${kickTimer(r,"inserire")}`;
+  return `<p class="cta-title"><span class="okmark" aria-hidden="true">✓</span> Pronostici completi per la ${r.n}ª giornata</p>${bar}<button class="btn wide sec" data-act="go" data-s="pronostici">Modifica i tuoi pronostici</button>${kickTimer(r,"modificare")}`;
 }
 
 /* timer fino al fischio d'inizio della prima partita della giornata (chiusura dei pronostici) */

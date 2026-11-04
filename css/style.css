@@ -104,9 +104,14 @@ input:focus,select:focus{outline:none;border-color:var(--blue)}
 .crest{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;font-family:var(--f-ui);font-weight:700;font-size:10px;letter-spacing:.02em;border:3px solid;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55)}
 .crest.lg{width:40px;height:40px;font-size:11px}
 /* select lega */
-.leaguesel{position:relative}
-.leaguesel select{appearance:none;-webkit-appearance:none;background:var(--card);box-shadow:var(--shadow);font-size:17px;padding:13px 44px 13px 18px;border-radius:var(--r);cursor:pointer}
-.leaguesel::after{content:"";position:absolute;right:20px;top:50%;border:6px solid transparent;border-top-color:var(--ink);transform:translateY(-2px);pointer-events:none}
+/* riga lega: "Lega" a sinistra, nome a destra (menu a tendina se ci sono più leghe) */
+.leaguerow{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);box-shadow:var(--shadow);border-radius:var(--r);padding:12px 16px;min-height:50px;box-sizing:border-box}
+.leaguerow .sect{flex:none}
+.lname{position:relative;display:flex;align-items:center;gap:6px;min-width:0;font-family:var(--f-title);font-weight:700;font-size:17px}
+.lname>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lname svg{width:20px;height:20px;flex:none}
+.lname select{position:absolute;inset:-8px -6px;width:calc(100% + 12px);height:calc(100% + 16px);opacity:0;cursor:pointer;font-size:16px}
+.lname.many:focus-within{outline:2px solid var(--blue);outline-offset:4px;border-radius:6px}
 /* schedina */
 .rounds{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px}
 .rchip{flex:none;border:1px solid var(--line);background:var(--card);border-radius:99px;padding:6px 12px;font-family:var(--f-ui);font-weight:500;font-size:13px;cursor:pointer;white-space:nowrap}
@@ -158,7 +163,7 @@ tr.me td{background:var(--blue-soft)}
 .kv td+td{border:0}
 /* bottom nav */
 .nav{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--card);box-shadow:0 -1px 0 var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-.nav .col{display:grid;grid-template-columns:repeat(4,1fr);height:var(--nav-h)}
+.nav .col{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;height:var(--nav-h)}
 .nav button{position:relative;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--muted);font-family:var(--f-ui);font-size:11px;font-weight:500}
 .nav button svg{width:24px;height:24px}
 .nav button[aria-current=page]{color:var(--blue)}
@@ -244,3 +249,20 @@ tr.me td{background:var(--blue-soft)}
 @media (prefers-reduced-motion:reduce){.flash{animation:none}}
 .pickhead{gap:4px}
 .pickhead .iconbtn{margin-left:-8px}
+
+/* home: riepilogo classifica toccabile */
+.statcard{width:100%;border:0;font:inherit;color:inherit;text-align:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.statcard:hover{box-shadow:0 4px 12px rgba(0,0,0,.22)}
+.statcard:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.statcard .golink{align-self:center;font-family:var(--f-ui);font-weight:600;font-size:14px;color:var(--blue)}
+/* home: avanzamento pronostici */
+.progress{display:flex;flex-direction:column;gap:6px;font-family:var(--f-ui)}
+.progress .ptxt{text-align:center;font-size:14px}
+.progress .pbar{height:8px;border-radius:99px;background:var(--field);overflow:hidden}
+.progress .pbar span{display:block;height:100%;border-radius:99px;background:var(--blue);transition:width .3s}
+.card.complete{background:var(--win-soft);box-shadow:var(--shadow),inset 0 0 0 1.5px var(--win)}
+.card.complete .pbar{background:rgba(255,255,255,.6)}
+.card.complete .pbar span{background:var(--win)}
+.okmark{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--win);color:#fff;font-size:13px;vertical-align:2px;margin-right:4px}
+/* pronostici: titolo della giornata fisso durante lo scorrimento */
+.pickhead{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--top-h,56px));z-index:8;background:var(--bg);margin-inline:-16px;padding:6px 16px 8px;box-shadow:0 6px 8px -8px rgba(0,0,0,.25)}
