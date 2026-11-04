@@ -457,3 +457,20 @@ td.nm{min-width:80px;overflow-wrap:anywhere}
 td.nm .chip{font-size:10px;padding:2px 6px;margin-left:4px;vertical-align:1px}
 td.n,th.n{padding-inline:6px}
 .btn.danger{background:#C8283A;color:#fff}
+
+/* classifica: intestazione blu con podio */
+.rkhero{background:var(--blue);color:#fff;border-radius:20px;padding:18px 18px 0;display:flex;flex-direction:column;gap:4px;overflow:hidden;box-shadow:0 8px 20px rgba(47,100,242,.25)}
+.rkhero .eyebrow{color:#DCE6FF}
+.rkname{font-size:40px;line-height:.95;margin:2px 0 2px;overflow-wrap:anywhere;letter-spacing:.01em}
+.rkmeta{font-size:13px;color:#DCE6FF;padding-bottom:18px}
+.podium{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:8px;margin-top:4px}
+.pod{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.pav{width:44px;height:44px;border-radius:50%;background:#fff;color:#1D47C9;display:grid;place-items:center;font-weight:800;font-size:18px;box-shadow:0 0 0 3px rgba(255,255,255,.35)}
+.pod.p1 .pav{width:54px;height:54px;font-size:22px;box-shadow:0 0 0 4px #FFD54A}
+.pnick{font-weight:700;font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ppts{font-family:var(--f-disp);font-weight:800;font-size:20px;line-height:1}
+.pbase{width:100%;display:grid;place-items:center;background:rgba(255,255,255,.16);border-radius:12px 12px 0 0;font-family:var(--f-disp);font-weight:800;font-size:26px;margin-top:4px}
+.pod.p1 .pbase{height:76px;background:rgba(255,255,255,.26)}
+.pod.p2 .pbase{height:56px}
+.pod.p3 .pbase{height:40px}
+.pod.me .pnick{text-decoration:underline;text-underline-offset:3px}

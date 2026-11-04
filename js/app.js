@@ -820,18 +820,25 @@ function vOthers(r){
 function vStandings(L){
   const rows=computeStandings(L,S.members,S.rounds,S.picks);
   const scored=S.rounds.filter(r=>r.matches.some(m=>esito(m)));
-  let html=`<div class="phdr"><h2 class="pagetitle">Classifica</h2><span class="small muted">${esc(L.name)}</span></div>`;
+  /* intestazione blu: nome della lega in grande e podio dei primi tre */
+  const lastN=scored.length?scored[scored.length-1].n:null;
+  const dayR=S.rankView!=="gen"&&scored.length?S.rounds.find(x=>"g"+x.n===S.rankView):null;
+  const podList=dayR?approved().map(m=>({nick:m.nick,uid:m._id,...roundScore(dayR,m._id)})).sort((a,b)=>(b.pts-a.pts)||(b.best-a.best)||a.nick.localeCompare(b.nick,"it",{sensitivity:"base"})).map((d,i,a)=>({nick:d.nick,uid:d.uid,pts:d.pts,best:d.best})).map((d,i,a)=>d)
+    :rows.map(r=>({nick:r.nick,uid:r.uid,pts:r.total,pos:r.pos}));
+  if(dayR)podList.forEach((d,i)=>{const p=podList[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
+  const podium=scored.length&&podList.length>=2?`<div class="podium">${[1,0,2].filter(i=>podList[i]).map(i=>{const x=podList[i];return `<div class="pod p${i+1}${x.uid===S.uid?" me":""}"><span class="pav">${esc((x.nick.trim()[0]||"?").toUpperCase())}</span><span class="pnick">${esc(x.nick)}</span><span class="ppts">${f2(x.pts)}</span><span class="pbase">${x.pos}</span></div>`}).join("")}</div>`:"";
+  let html=`<section class="rkhero"><span class="eyebrow">Classifica${dayR?` · ${dayR.n}ª giornata`:""}</span><h2 class="disp rkname">${esc(L.name)}</h2><span class="rkmeta">${approved().length} giocator${approved().length===1?"e":"i"} · ${lastN?`aggiornata alla ${lastN}ª giornata`:`si parte dalla ${L.startRound}ª giornata`}</span>${podium}</section>`;
   if(scored.length)html+=`<div class="rounds" role="group" aria-label="Tipo di classifica"><button class="rchip" aria-pressed="${S.rankView==="gen"}" data-act="rank" data-v="gen">Generale</button>${scored.map(r=>`<button class="rchip" aria-pressed="${S.rankView==="g"+r.n}" data-act="rank" data-v="g${r.n}">${r.n}ª giornata</button>`).join("")}</div>`;
   const v=(x)=>x?f2(x):"–";
   if(!scored.length||S.rankView==="gen"){
-    html+=`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
+    html+=`<section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
     ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos"><span class="posb${r.pos<=3?" p"+r.pos:""}">${r.pos}</span></td><td class="nm">${esc(r.nick)}${r.bot?` <span class="chip">prova</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td><td class="n">${v(r.mq)}</td></tr>`).join("")}
     </tbody></table></div>${scored.length?`<p class="small muted" style="font-family:var(--f-ui)">A pari punti decide il <b>Miglior punteggio di giornata (MP)</b>, poi la <b>Miglior quota (MQ)</b>.</p>`:""}</section>`;
   }else{
     const r=S.rounds.find(x=>"g"+x.n===S.rankView);if(!r){S.rankView="gen";return vStandings(L)}
     const day=approved().map(m=>({m,...roundScore(r,m._id)})).sort((a,b)=>(b.pts-a.pts)||(b.best-a.best)||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
     day.forEach((d,i)=>{const p=day[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
-    html+=`<section class="card"><h3>${r.n}ª giornata</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
+    html+=`<section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
     ${day.map(d=>`<tr class="${d.m._id===S.uid?"me":""}"><td class="pos"><span class="posb${d.pos<=3?" p"+d.pos:""}">${d.pos}</span></td><td class="nm">${esc(d.m.nick)}</td><td class="n"><b>${f2(d.pts)}</b></td><td class="n">${v(d.best)}</td></tr>`).join("")}</tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">A pari punti decide la <b>Miglior quota (MQ)</b> della giornata.</p></section>`;
   }
   return html;
