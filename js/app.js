@@ -135,6 +135,9 @@ const Local={
   },
   async approve(m){await LocalStore.set(`leagues/${S.lid}/members/${m._id}`,{nick:m.nick,status:"approved",bot:!!m.bot,joinedAt:m.joinedAt||Date.now()})},
   async removeMember(m){await LocalStore.del(`leagues/${S.lid}/members/${m._id}`)},
+  async myNicknames(){const out={};for(const lid of S.me.leagues||[]){const m=LocalStore.list(`leagues/${lid}/members`).find(x=>x._id===S.uid);if(m)out[lid]=m.nick}return out},
+  async setNicknameIn(lid,nick){const prev=S.lid;S.lid=lid;try{await this.setNickname(nick)}finally{S.lid=prev}},
+  async deleteAccount(){throw new Error("In modalità prova l'account non si può eliminare")},
   async setNickname(nick){const taken=LocalStore.list(`leagues/${S.lid}/members`).some(m=>m._id!==S.uid&&m.nick.toLowerCase()===nick.toLowerCase());if(taken)throw new Error("Nickname già usato in questa lega");
     const me=LocalStore.list(`leagues/${S.lid}/members`).find(m=>m._id===S.uid);if(!me)throw new Error("Non fai parte di questa lega");const {_id,...doc}=me;await LocalStore.set(`leagues/${S.lid}/members/${S.uid}`,{...doc,nick})},
   async addBot(name){await LocalStore.set(`leagues/${S.lid}/members/bot-${rid(6)}`,{nick:name,status:"approved",bot:true,joinedAt:Date.now()})},
@@ -180,7 +183,7 @@ const Online={
   },
   async onSession(session){
     const uid=session?.user?.id||null;
-    S.email=session?.user?.email||"";
+    S.email=session?.user?.email||"";S.providers=session?.user?.app_metadata?.providers||(session?.user?.app_metadata?.provider?[session.user.app_metadata.provider]:[]);
     if(uid===S.uid&&S.authReady)return render();
     S.uid=uid;S.authReady=true;
     if(this.chan){this.sb.removeChannel(this.chan);this.chan=null}
@@ -260,7 +263,10 @@ const Online={
   },
   async approve(m){this.check(await this.sb.from("members").update({status:"approved"}).eq("id",m.mid));await this.refresh()},
   async removeMember(m){this.check(await this.sb.from("members").delete().eq("id",m.mid));await this.refresh()},
-  async setNickname(nick){this.check(await this.sb.rpc("set_nickname",{p_league:S.lid,p_nickname:nick}));await this.refresh()},
+  async setNickname(nick){return this.setNicknameIn(S.lid,nick)},
+  async setNicknameIn(lid,nick){this.check(await this.sb.rpc("set_nickname",{p_league:lid,p_nickname:nick}));await this.refresh()},
+  async myNicknames(){const d=this.check(await this.sb.from("members").select("league_id,nickname").eq("user_id",S.uid));const out={};for(const m of d)out[m.league_id]=m.nickname;return out},
+  async deleteAccount(){const {data,error}=await this.sb.functions.invoke("delete-account",{body:{confirm:"ELIMINA"}});if(error){let msg=error.message;try{msg=(await error.context.json()).error||msg}catch{}throw new Error(msg)}if(!data?.ok)throw new Error("Eliminazione non riuscita");await this.sb.auth.signOut()},
   async addBot(name){this.check(await this.sb.from("members").insert({league_id:S.lid,nickname:name,status:"approved",is_bot:true}));await this.refresh()},
   async botPicks(r,bots){const rows=[];for(const b of bots)for(const m of r.matches)if(m.o1)rows.push({member_id:b.mid,fixture_id:+m.id,pick:sampleEsito(m)});if(rows.length)this.check(await this.sb.from("picks").upsert(rows,{onConflict:"member_id,fixture_id"}));await this.refresh()},
   async deleteLeague(){this.check(await this.sb.from("leagues").delete().eq("id",S.lid));await this.refreshLeagues()},
@@ -469,6 +475,15 @@ const ACT={
     for(const r of rs){if(!await ACT.savePicks({r:r._id}))return}S.draft={};next&&next()},
   leaveDiscard:()=>{const next=S.leave?.next;S.leave=null;S.draft={};next&&next()},
   leaveStay:()=>{S.leave=null;render()},
+  openProfile:()=>{S.prof={nicks:null,pw:"",pw2:"",del:"",edit:{}};go("profilo");B.myNicknames().then(n=>{if(S.prof){S.prof.nicks=n;render()}}).catch(e=>toast(itMsg(e)))},
+  profNick:d=>{const lid=d.lid;const nick=(S.prof.edit[lid]??S.prof.nicks?.[lid]??"").trim();
+    if(nick.length<2||nick.length>20)return toast("Il nickname deve avere da 2 a 20 caratteri");
+    if(nick===S.prof.nicks?.[lid])return toast("Il nickname è già questo");
+    safe(async()=>{await B.setNicknameIn(lid,nick);S.prof.nicks[lid]=nick;delete S.prof.edit[lid];toast("Nickname aggiornato")})},
+  profPw:()=>{const f=S.prof;if((f.pw||"").length<6)return toast("La password deve avere almeno 6 caratteri");if(f.pw!==f.pw2)return toast("Le due password non coincidono");
+    safe(async()=>{await Online.updatePw(f.pw);f.pw=f.pw2="";toast("Password aggiornata")})},
+  profDel:()=>{if((S.prof.del||"").trim().toUpperCase()!=="ELIMINA")return toast("Scrivi ELIMINA per confermare");
+    safe(async()=>{await B.deleteAccount();S.prof=null;S.screen="home";toast("Account eliminato")})},
   saveNick:()=>{const me=myMember();const nick=(S.nickEdit??me?.nick??"").trim();
     if(nick.length<2||nick.length>20)return toast("Il nickname deve avere da 2 a 20 caratteri");
     if(me&&nick===me.nick)return toast("Il nickname è già questo");
@@ -574,9 +589,9 @@ function render(){
   const needLogin=ONLINE&&S.authReady&&!S.uid;
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
   if(ADMIN_PAGE)return renderAdminPage(needLogin);
-  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":"TotoFanta";
+  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":S.screen==="profilo"?"Profilo":"TotoFanta";
   const bare=needLogin||recovery||S.boot||!S.authReady;
-  const backTo={create:"home",leghe:"home",calendario:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega"}[S.screen];
+  const backTo={create:"home",leghe:"home",calendario:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
   const leftBtn=bare?"<span></span>":(backTo?`<button class="iconbtn" data-act="go" data-s="${backTo}" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
@@ -584,6 +599,7 @@ function render(){
   else if(recovery)body=vNewPw();
   else if(S.screen==="create")body=vCreate();
   else if(S.screen==="leghe")body=vMyLeagues();
+  else if(S.screen==="profilo")body=vProfile();
   else if(S.screen==="calendario")body=vCalendar();
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
@@ -619,8 +635,8 @@ function vDrawer(){
   const L=league();const admin=isAdmin();const me=myMember();
   const pend=admin?S.members.filter(m=>m.status==="pending").length:0;
   const who=ONLINE
-    ?`<b>${esc(me?.nick||"Il tuo profilo")}</b><span class="small">${esc(S.email)}</span><button class="btn" data-act="logout">Logout</button>`
-    :`<label class="small" for="who-sel">Stai giocando come</label><select id="who-sel">${S.localUsers.map(u=>`<option value="${u.id}"${u.id===S.uid?" selected":""}>${esc(u.name)}</option>`).join("")}</select><button class="btn" data-act="addLocal">+ Nuovo giocatore</button>`;
+    ?`<button class="profbtn" data-act="openProfile"><b>${esc(me?.nick||"Il tuo profilo")}</b><span class="small">${esc(S.email)}</span><span class="small">Profilo ›</span></button>`
+    :`<label class="small" for="who-sel">Stai giocando come</label><select id="who-sel">${S.localUsers.map(u=>`<option value="${u.id}"${u.id===S.uid?" selected":""}>${esc(u.name)}</option>`).join("")}</select><button class="btn" data-act="addLocal">+ Nuovo giocatore</button><button class="btn" data-act="openProfile">Profilo</button>`;
   return `<div class="scrim" data-act="closeAll"></div><aside class="drawer" aria-label="Menu">
   <div class="head">${who}</div>
   <nav>
@@ -832,6 +848,28 @@ function vInfo(L){
    <ol class="rules"><li>Ogni giornata si pronostica l'esito 1, X o 2 delle 10 partite.</li><li>Pronostico giusto = punti pari alla quota. Sbagliato o mancante = 0.</li><li>Si può cambiare fino al fischio d'inizio della prima partita della giornata.</li><li>Vince chi ha più punti all'ultima giornata.</li></ol></section>
   <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m.bot?` <span class="chip">prova</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ${S.confirm==="rm-"+m._id?"danger":"ghost"}" data-act="removeMember" data-u="${m._id}">${S.confirm==="rm-"+m._id?"Conferma":"Rimuovi"}</button>`:""}</div>`).join("")}</div></section>
   ${admin&&S.confirm==="delLeague"?`<section class="card"><h3>Eliminare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Spariscono giornate, schedine e classifica per tutti i partecipanti. Non si può annullare.</p><div class="row"><button class="btn danger" data-act="delLeague">Elimina definitivamente</button><button class="btn sec" data-act="go" data-s="lega">Annulla</button></div></section>`:""}`;
+}
+
+/* ---- Profilo: account, password (solo accesso con email), nickname nelle leghe, eliminazione account ---- */
+function vProfile(){
+  const P=S.prof||(S.prof={nicks:null,pw:"",pw2:"",del:"",edit:{}});
+  const google=(S.providers||[]).includes("google");const emailPw=(S.providers||[]).includes("email");
+  const mine=myLeagues();
+  let html=`<section class="card"><h3>Account</h3><table class="kv"><tbody>
+   <tr><td>Email</td><td>${ONLINE?esc(S.email):"Modalità prova"}</td></tr>
+   ${ONLINE?`<tr><td>Accesso</td><td>${google&&emailPw?"Google ed email":google?"Google":"Email e password"}</td></tr>`:""}</tbody></table>
+   ${ONLINE?`<button class="btn sec" data-act="logout" style="align-self:flex-start">Logout</button>`:""}</section>`;
+  html+=`<section class="card"><h3>I tuoi nickname</h3><p class="small muted" style="font-family:var(--f-ui)">Ogni lega ha il suo nickname: è il nome con cui ti vedono gli altri.</p>
+   ${!mine.length?`<p class="small muted">Non sei ancora in nessuna lega.</p>`:!P.nicks?`<p class="small muted">Caricamento…</p>`:`<div class="list">${mine.map(L=>`<div class="nickrow"><span class="lg">${esc(L.name)}</span><div class="row"><input type="text" class="grow" id="pn-${L._id}" data-bind="prof.edit.${L._id}" value="${esc(P.edit[L._id]??P.nicks[L._id]??"")}" maxlength="20" autocomplete="off" aria-label="Nickname in ${esc(L.name)}"><button class="btn sm" type="button" data-act="profNick" data-lid="${L._id}" ${S.busy?"disabled":""}>Salva</button></div></div>`).join("")}</div>`}</section>`;
+  if(ONLINE&&emailPw)html+=`<section class="card"><h3>Cambia password</h3>
+   <input type="password" id="pp-1" data-bind="prof.pw" value="${esc(P.pw)}" placeholder="Nuova password (almeno 6 caratteri)" autocomplete="new-password">
+   <input type="password" id="pp-2" data-bind="prof.pw2" value="${esc(P.pw2)}" placeholder="Ripeti la password" autocomplete="new-password">
+   <button class="btn sm" data-act="profPw" style="align-self:flex-start" ${S.busy?"disabled":""}>Salva password</button></section>`;
+  const adm=mine.filter(L=>L.adminId===S.uid);
+  html+=`<section class="card danger-zone"><h3>Elimina account</h3><p class="small" style="font-family:var(--f-ui)">Cancella per sempre il tuo account, le tue iscrizioni e i tuoi pronostici.${adm.length?` Verranno eliminate anche le leghe di cui sei admin, per tutti i partecipanti: <b>${adm.map(L=>esc(L.name)).join(", ")}</b>.`:""} Non si può annullare.</p>
+   <input type="text" id="pd-1" data-bind="prof.del" value="${esc(P.del)}" placeholder="Scrivi ELIMINA per confermare" autocomplete="off" autocapitalize="characters">
+   <button class="btn sm danger" data-act="profDel" style="align-self:flex-start" ${S.busy?"disabled":""}>Elimina il mio account</button></section>`;
+  return html;
 }
 
 /* ---- Calendario Serie A (unico per tutte le leghe, sola lettura) ---- */

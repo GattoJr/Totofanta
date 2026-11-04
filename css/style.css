@@ -267,3 +267,11 @@ tr.me td{background:var(--blue-soft)}
 /* pronostici: titolo della giornata fisso durante lo scorrimento */
 .pickhead{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--top-h,56px));z-index:8;background:var(--bg);margin-inline:-16px;padding:6px 16px 8px;box-shadow:0 6px 8px -8px rgba(0,0,0,.25)}
 .statcard .statnick{align-self:center;font-family:var(--f-title);font-weight:700;font-size:16px;margin-bottom:-2px}
+/* profilo */
+.profbtn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.profbtn .small:last-child{margin-top:6px;font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.nickrow{display:flex;flex-direction:column;gap:6px}
+.nickrow .lg{font-weight:600;font-family:var(--f-ui);font-size:14px}
+.danger-zone{box-shadow:var(--shadow),inset 0 0 0 1.5px var(--lose-soft)}
+.nickrow .row{flex-wrap:nowrap}
+.nickrow input{flex:1;min-width:0;width:auto}
