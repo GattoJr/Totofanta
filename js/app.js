@@ -23,6 +23,10 @@ const WANT_ONLINE=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey);
 const ONLINE=WANT_ONLINE&&!!(window.supabase&&window.supabase.createClient);
 /* pagina separata del pannello amministratore (admin.html): nessun collegamento dal sito */
 const ADMIN_PAGE=!!window.TOTOFANTA_ADMIN;
+/* indirizzo del sito principale (anche se si è su admin.html o index.html) */
+const SITE_URL=new URL("./",location.href).href.split("#")[0];
+/* chi arriva su admin.html con un link d'invito va sul sito dei partecipanti */
+if(ADMIN_PAGE&&/^#(lega=|invito-)/.test(location.hash))location.replace(SITE_URL+location.hash);
 
 /* ===================== Utility ===================== */
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -132,6 +136,7 @@ const Local={
   async addBot(name){await LocalStore.set(`leagues/${S.lid}/members/bot-${rid(6)}`,{nick:name,status:"approved",bot:true,joinedAt:Date.now()})},
   async botPicks(r,bots){for(const b of bots){const pk={};r.matches.forEach(m=>{if(m.o1)pk[m.id]=sampleEsito(m)});await LocalStore.set(`leagues/${S.lid}/picks/${r._id}~${b._id}`,{uid:b._id,round:r._id,picks:pk,updatedAt:Date.now()})}},
   async deleteLeague(){const lid=S.lid;for(const p of S.picks)await LocalStore.del(`leagues/${lid}/picks/${p._id}`);for(const m of S.members)await LocalStore.del(`leagues/${lid}/members/${m._id}`);await LocalStore.del(`leagues/${lid}`);await this.removeFromMe(lid)},
+  async nameByCode(code){return LocalStore.list("leagues").find(l=>l.inviteCode===(code||"").trim().toUpperCase())?.name||null},
   async leagueType(name){return LocalStore.list("leagues").find(l=>l.nameKey===(name||"").trim().toLowerCase())?.type||null},
   // calendario: accoppiamenti da js/calendario.js, orari modificati salvati nel browser
   fixturesFrom(docs){const ov={};for(const d of docs)ov[d._id]=d;S.odds={};
@@ -182,7 +187,7 @@ const Online={
     await Promise.all([this.refreshLeagues(),this.loadFixtures()]);
     pickDefaultLeague();
     this.subscribe();
-    fetchJoinKind();
+    fetchJoinKind();resolveLegacyCode();
     render();
   },
   subscribe(){
@@ -254,6 +259,7 @@ const Online={
   async addBot(name){this.check(await this.sb.from("members").insert({league_id:S.lid,nickname:name,status:"approved",is_bot:true}));await this.refresh()},
   async botPicks(r,bots){const rows=[];for(const b of bots)for(const m of r.matches)if(m.o1)rows.push({member_id:b.mid,fixture_id:+m.id,pick:sampleEsito(m)});if(rows.length)this.check(await this.sb.from("picks").upsert(rows,{onConflict:"member_id,fixture_id"}));await this.refresh()},
   async deleteLeague(){this.check(await this.sb.from("leagues").delete().eq("id",S.lid));await this.refreshLeagues()},
+  async nameByCode(code){const r=await this.sb.rpc("league_name_by_code",{p_code:(code||"").trim()});return r.error?null:r.data||null},
   async leagueType(name){const r=await this.sb.rpc("league_join_info",{p_name:(name||"").trim()});return r.error?null:r.data||null},
   // ---- account
   async signIn(email,pw){this.check(await this.sb.auth.signInWithPassword({email,password:pw}))},
@@ -290,7 +296,7 @@ async function boot(){
   render();
   handleHash();
   try{await B.init()}catch(e){console.error(e);toast("Avvio non riuscito: "+itMsg(e))}
-  S.boot=false;fetchJoinKind();render();
+  S.boot=false;fetchJoinKind();resolveLegacyCode();render();
 }
 function myLeagues(){return (S.me.leagues||[]).map(id=>S.leagues.find(l=>l._id===id)).filter(Boolean)}
 function pickDefaultLeague(){
@@ -309,7 +315,14 @@ function go(screen){S.screen=screen;S.drawer=false;S.modal=null;S.help=null;S.co
 function handleHash(){
   if(ADMIN_PAGE)return;
   const m=(location.hash||"").match(/^#lega=(.+)$/);
-  if(m){let name="";try{name=decodeURIComponent(m[1])}catch{name=m[1]}if(name.trim())openJoin(name.trim())}
+  if(m){let name="";try{name=decodeURIComponent(m[1])}catch{name=m[1]}if(name.trim())openJoin(name.trim());return}
+  /* vecchi link #invito-CODICE: si ricava il nome della lega, la password serve comunque */
+  const c=(location.hash||"").match(/^#invito-([A-Za-z0-9]+)$/);
+  if(c){S.legacyCode=c[1].toUpperCase();S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="";S.modal="join";resolveLegacyCode()}
+}
+function resolveLegacyCode(){
+  const code=S.legacyCode;if(!code||!S.uid)return;S.legacyCode=null;
+  B.nameByCode(code).then(n=>{if(n&&S.modal==="join"&&!S.form.name){openJoin(n);render()}}).catch(()=>{});
 }
 function openJoin(name){
   S.form={name,linkName:name,pw:"",nick:"",fromLink:true,kind:undefined};S.formErr="";S.modal="join";S.drawer=false;fetchJoinKind();
@@ -319,7 +332,7 @@ function fetchJoinKind(){
   const f=S.form;if(!S.uid||S.modal!=="join"||!f.fromLink||f.kind!==undefined)return;const name=f.name;
   B.leagueType(name).then(k=>{if(S.modal==="join"&&S.form.name===name){S.form.kind=k||"none";render()}}).catch(()=>{});
 }
-const inviteUrl=L=>location.href.split("#")[0]+"#lega="+encodeURIComponent(L.name);
+const inviteUrl=L=>SITE_URL+"#lega="+encodeURIComponent(L.name);
 window.addEventListener("hashchange",()=>{handleHash();render()});
 
 /* ===================== Selettori ===================== */

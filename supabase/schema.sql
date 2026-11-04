@@ -384,6 +384,14 @@ language sql stable security definer set search_path = '' as $$
   select l.type from public.leagues l where l.name_key = lower(btrim(coalesce(p_name, '')));
 $$;
 
+-- Vecchi link d'invito (#invito-CODICE): restituisce solo il nome della lega,
+-- così la finestra d'iscrizione si apre con il nome compilato. La password serve comunque.
+create or replace function public.league_name_by_code(p_code text) returns text
+language sql stable security definer set search_path = '' as $$
+  select l.name from public.league_secrets s join public.leagues l on l.id = s.league_id
+   where s.invite_code = upper(btrim(coalesce(p_code, '')));
+$$;
+
 -- Codice d'invito: lo leggono solo gli iscritti approvati.
 create or replace function public.get_invite_code(p_league uuid) returns text
 language sql stable security definer set search_path = '' as $$
@@ -396,10 +404,12 @@ revoke execute on function public.create_league(text, text, text, text, int, tex
 revoke execute on function public.join_league(text, text, text, text) from public, anon;
 revoke execute on function public.get_invite_code(uuid) from public, anon;
 revoke execute on function public.league_join_info(text) from public, anon;
+revoke execute on function public.league_name_by_code(text) from public, anon;
 grant  execute on function public.create_league(text, text, text, text, int, text, text) to authenticated;
 grant  execute on function public.join_league(text, text, text, text) to authenticated;
 grant  execute on function public.get_invite_code(uuid) to authenticated;
 grant  execute on function public.league_join_info(text) to authenticated;
+grant  execute on function public.league_name_by_code(text) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- Aggiornamenti in tempo reale (il sito si aggiorna quando un altro gioca)
