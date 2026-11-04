@@ -604,7 +604,10 @@ function render(){
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
-  app.innerHTML=`<header class="top"><div class="col">${leftBtn}<h1>${title}</h1><span></span></div></header>
+  const brand=title==="TotoFanta"?`<h1 class="brand">TOTOFANTA<span class="b1x2">1X2</span></h1>`:`<h1>${title}</h1>`;
+  const meNick=myMember()?.nick||S.localUsers.find(u=>u.id===S.uid)?.name||S.email||"?";
+  const rightBtn=bare||S.screen==="profilo"?"<span></span>":`<button class="avatar" data-act="openProfile" aria-label="Profilo">${esc((meNick.trim()[0]||"?").toUpperCase())}</button>`;
+  app.innerHTML=`<header class="top"><div class="col">${leftBtn}${brand}${rightBtn}</div></header>
   <main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
   if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
@@ -739,40 +742,38 @@ function vHome(L){
   const r=currentRound();
   let html=leagueSelect();
   /* riepilogo classifica (2.2): sempre visibile, anche prima dei risultati */
-  const done=r&&roundVisible(r)&&!roundLocked(r)&&r.matches.length&&r.matches.every(m=>(pickDoc(r._id,S.uid)?.picks||{})[m.id]);
-  html+=`<section class="card${done?" complete":""}">${statusCard(L,r)}</section>`;
+  html+=`<section class="hero">${statusCard(L,r)}</section>`;
   /* riepilogo classifica (2.2): sempre visibile; tutta la card porta alla classifica */
-  html+=`<button type="button" class="card statcard" data-act="go" data-s="classifica" aria-label="Vai alla classifica"><span class="statnick">${esc(myMember()?.nick||"")}</span><div class="stats"><div><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></div><div><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></div><div><b>${mine&&mine.mp?f2(mine.mp):"0.00"}</b><span>Miglior punteggio</span></div></div><span class="golink">Vai alla classifica ›</span></button>`;
+  html+=`<button type="button" class="card statcard" data-act="go" data-s="classifica" aria-label="Vai alla classifica"><span class="stathead"><span class="statnick">${esc(myMember()?.nick||"")}</span><span class="golink">Vai alla classifica ›</span></span><span class="stats"><span><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></span><span><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></span><span><b>${mine&&mine.mp?f2(mine.mp):"0.00"}</b><span>Miglior punt.</span></span></span></button>`;
   /* le partite si vedono sempre (gli accoppiamenti sono fissi), anche prima che le quote siano pubblicate */
   if(r&&r.matches.length){
     const upcoming=r.matches.filter(m=>!esito(m));const show=upcoming.length?upcoming:r.matches;
-    html+=`<div><div class="sect">${upcoming.length?"Prossimi incontri":"Risultati"}</div><div class="small" style="margin:2px 0 8px">${r.n}° Giornata</div>
+    html+=`<div class="nextwrap"><div class="nexthead"><span class="disp">${upcoming.length?"Prossimi incontri":"Risultati"}</span><span class="small muted">${r.n}ª giornata</span></div>
     <div class="next">${show.map(m=>`<div class="mini"><div class="teams">${crest(m.home)}<span>${abbr(m.home)} - ${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:(m.kickoff?`<span>${fmtDay(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`:`<span>${m.day?fmtDay(m.day):"—"}</span><span>da definire</span>`)}</div></div>`).join("")}</div></div>`;
   }
   return html;
 }
+/* card blu della Home (proposta A): giornata e stato, pulsante, "Hai ancora" e timer */
+function heroTop(label,chip){return `<div class="hero-top"><span class="eyebrow">${label}</span>${chip?`<span class="hchip">${chip}</span>`:""}</div>`}
 function statusCard(L,r){
-  if(!r){return `<p class="cta-title">La competizione non è ancora iniziata</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">Si parte dalla ${L.startRound}ª giornata</p>`}
-  if(!roundVisible(r)){const k=firstKick(r);
-    return `<p class="cta-title">${S.rounds[0]===r&&!S.rounds.some(x=>x.matches.some(m=>esito(m)))?"La competizione non è ancora iniziata":`Quote della ${r.n}ª giornata in arrivo`}</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">${k?`Si gioca da ${fmtDow(k)} · le quote arrivano prima della giornata`:"Le quote arrivano prima della giornata"}</p>`}
-  const open=roundLocked(r)?[]:r.matches;
-  if(!open.length){
-    if(roundDone(r))return `<p class="cta-title">${r.n}ª giornata conclusa</p><p class="count">Hai fatto <b>${f2(roundScore(r,S.uid).pts)}</b> punti</p><button class="btn wide" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
-    return `<p class="cta-title">${r.n}ª giornata in corso</p><button class="btn wide" data-act="go" data-s="pronostici">Segui i tuoi pronostici</button>`}
-  const pk=pickDoc(r._id,S.uid)?.picks||{};const tot=r.matches.length;const n=r.matches.filter(m=>pk[m.id]).length;
-  const bar=`<div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${tot}" aria-valuenow="${n}" aria-label="Pronostici inseriti"><div class="ptxt"><b>${n}/${tot}</b> pronostici</div><div class="pbar"><span style="width:${tot?Math.round(n/tot*100):0}%"></span></div></div>`;
-  if(n<tot)return `<p class="cta-title">Inserisci i tuoi pronostici per la ${r.n}ª giornata</p>${bar}<button class="btn wide" data-act="go" data-s="pronostici">Inserisci i tuoi pronostici</button>${kickTimer(r,"inserire")}`;
-  return `<p class="cta-title"><span class="okmark" aria-hidden="true">✓</span> Pronostici completi per la ${r.n}ª giornata</p>${bar}<button class="btn wide sec" data-act="go" data-s="pronostici">Modifica i tuoi pronostici</button>${kickTimer(r,"modificare")}`;
+  if(!r)return heroTop(`Dalla ${L.startRound}ª giornata`)+`<p class="hero-title">La competizione non è ancora iniziata</p><button class="btn hbtn" data-act="go" data-s="lega">Invita alla tua lega</button>`;
+  if(!roundVisible(r)){const k=firstKick(r);const first=S.rounds[0]===r&&!S.rounds.some(x=>x.matches.some(m=>esito(m)));
+    return heroTop(`${r.n}ª giornata`,"Quote in arrivo")+`<p class="hero-title">${first?"La competizione non è ancora iniziata":"Le quote arrivano prima della giornata"}</p><button class="btn hbtn" data-act="go" data-s="lega">Invita alla tua lega</button>${k?`<p class="hero-sub">Si gioca da ${fmtDow(k)}</p>`:""}`}
+  if(roundLocked(r)){
+    if(roundDone(r))return heroTop(`${r.n}ª giornata`,"Conclusa")+`<p class="hero-title">Hai fatto ${f2(roundScore(r,S.uid).pts)} punti</p><button class="btn hbtn" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
+    return heroTop(`${r.n}ª giornata`,"In corso")+`<button class="btn hbtn" data-act="go" data-s="pronostici">Segui i tuoi pronostici</button>`}
+  const pk=pickDoc(r._id,S.uid)?.picks||{};const complete=r.matches.every(m=>pk[m.id]);
+  return heroTop(`${r.n}ª giornata`,"Aperta")+`<button class="btn hbtn" data-act="go" data-s="pronostici">${complete?"Modifica":"Inserisci"} i tuoi pronostici</button>${kickTimer(r)}`;
 }
 
 /* timer fino al fischio d'inizio della prima partita della giornata (chiusura dei pronostici) */
 function kickTimer(r,verb){
   const now=Date.now();const ks=r.matches.map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x)).sort((a,b)=>a-b);if(!ks.length)return "";
   const t=ks[0];if(t<=now)return "";
-  return `<div class="timer"><span class="lbl">Hai ancora</span><span class="clock" data-deadline="${t}">${clockText(t-now)}</span><span class="lbl">per ${verb} i tuoi pronostici</span></div>`;
+  return `<div class="timer"><span class="lbl">Hai ancora</span><span class="clock" data-deadline="${t}">${clockText(t-now)}</span></div>`;
 }
-/* formato XXgYYhZZmAAs: giorni, ore, minuti, secondi */
-function clockText(ms){ms=Math.max(0,ms);const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;return `${pad(d)}g${pad(h)}h${pad(m)}m${pad(x)}s`}
+/* formato XXg YYh ZZm AAs: giorni, ore, minuti, secondi */
+function clockText(ms){ms=Math.max(0,ms);const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;return `${pad(d)}g ${pad(h)}h ${pad(m)}m ${pad(x)}s`}
 /* aggiorna i timer ogni secondo senza ridisegnare la pagina; a scadenza ridisegna (blocco pronostici) */
 setInterval(()=>{const now=Date.now();let expired=false;document.querySelectorAll("[data-deadline]").forEach(el=>{const ms=+el.dataset.deadline-now;el.textContent=clockText(ms);if(ms<=0)expired=true});if(expired)render()},1000);
 
@@ -782,7 +783,8 @@ function vPicks(L){
   if(!list.length)return `<section class="card"><p class="cta-title">Nessuna giornata disponibile</p><p class="center small muted">Il calendario non è ancora disponibile.</p></section>`;
   const r=(S.roundSel!=null&&list.find(x=>x.n===S.roundSel))||currentRound();
   const vis=roundVisible(r);const st=roundStatus(r,L);
-  let html=`<div class="row pickhead"><button class="iconbtn" data-act="go" data-s="home" aria-label="Indietro alla Home">${I.back}</button><h2 class="grow">${r.n}° Giornata</h2><span class="chip ${st.c}">${st.t}</span></div>`;
+  const fk=firstKick(r);const sub=roundVisible(r)&&fk&&!roundLocked(r)?`Chiude ${fmtDow(fk)} alle ${fmtTime(fk)}`:roundLocked(r)?"Pronostici chiusi":"";
+  let html=`<div class="row pickhead"><button class="iconbtn" data-act="go" data-s="home" aria-label="Indietro alla Home">${I.back}</button><div class="grow phead"><h2 class="disp">${r.n}ª giornata</h2>${sub?`<span class="small muted">${sub}</span>`:""}</div><span class="chip ${st.c}">${st.t}</span></div>`;
   if(list.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${list.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
   if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
   const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=!roundLocked(r);
@@ -790,9 +792,9 @@ function vPicks(L){
     const locked=roundLocked(r);const started=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
       return `<button class="${cls}" ${locked?"disabled":""} data-act="pick" data-r="${r._id}" data-m="${m.id}" data-p="${k}" aria-pressed="${sel}" aria-label="${esc(m.home)}–${esc(m.away)}: ${k}, quota ${o?o.toFixed(2):"non disponibile"}"><span class="s">${k}</span><span class="o">${o?o.toFixed(2):"—"}</span></button>`};
-    const mid=e?`<span class="score">${m.hg}-${m.ag}</span>`:"VS";
+    const dot=t=>{const c=COLORS[t]||["#888","#444"];return `<span class="tdot" style="background:${c[0]};border-color:${c[1]}" aria-hidden="true"></span>`};
     const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(started?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
-    return `<section class="card match"><div class="date">${fmtFull(m.kickoff)}</div><div class="line">${crest(m.home,1)}<span class="h">${esc(m.home)}</span><span class="vs">${mid}</span><span class="a">${esc(m.away)}</span>${crest(m.away,1)}</div><div class="picks">${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
+    return `<section class="card match"><div class="mrow"><div class="minfo"><span class="mdate">${fmtDow(m.kickoff).toUpperCase()} · ${fmtTime(m.kickoff)}</span><span class="mteam">${dot(m.home)}<span>${esc(m.home)}</span>${e?`<b class="mgoal">${m.hg}</b>`:""}</span><span class="mteam">${dot(m.away)}<span>${esc(m.away)}</span>${e?`<b class="mgoal">${m.ag}</b>`:""}</span></div>${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div><div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div></div>
   <p class="center small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
