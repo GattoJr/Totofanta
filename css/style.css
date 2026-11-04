@@ -242,3 +242,5 @@ tr.me td{background:var(--blue-soft)}
 .flash{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);z-index:60;background:var(--win);color:#fff;font-family:var(--f-ui);font-weight:600;font-size:16px;padding:16px 22px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);text-align:center;max-width:min(320px,86vw);animation:flashin .18s ease-out}
 @keyframes flashin{from{opacity:0;transform:translate(-50%,-44%)}to{opacity:1;transform:translate(-50%,-50%)}}
 @media (prefers-reduced-motion:reduce){.flash{animation:none}}
+.pickhead{gap:4px}
+.pickhead .iconbtn{margin-left:-8px}
