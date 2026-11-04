@@ -322,7 +322,7 @@ function picksDirty(){return S.rounds.some(r=>pickChanges(r).length>0)}
 function guard(next){if(S.screen==="pronostici"&&picksDirty()){S.leave={next};S.drawer=false;render();return true}return false}
 window.addEventListener("beforeunload",e=>{if(S.screen==="pronostici"&&picksDirty()){e.preventDefault();e.returnValue=""}});
 let flashT;function flash(msg){S.flash=msg;render();clearTimeout(flashT);flashT=setTimeout(()=>{S.flash="";render()},2200)}
-function go(screen){if(screen!=="pronostici"&&guard(()=>go(screen)))return;if(screen!=="pronostici")S.draft={};S.screen=screen;S.drawer=false;S.modal=null;S.help=null;S.confirm=null;S.formErr="";render();window.scrollTo(0,0)}
+function go(screen){if(screen!=="pronostici"&&guard(()=>go(screen)))return;if(screen!=="pronostici")S.draft={};if(screen!==S.screen)S.prev=S.screen;S.screen=screen;S.drawer=false;S.modal=null;S.help=null;S.confirm=null;S.formErr="";render();window.scrollTo(0,0)}
 /* link d'invito: #lega=<nome della lega> apre la schermata d'iscrizione con il nome già inserito */
 function handleHash(){
   if(ADMIN_PAGE)return;
@@ -423,7 +423,7 @@ const ACT={
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
   newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?nextCalendarRound():1),nick:"",logo:null};go("create")},
   joinModal:()=>{S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="";S.modal="join";S.drawer=false;render()},
-  pickLeague:d=>{if(guard(()=>ACT.pickLeague(d)))return;selectLeague(d.lid);go("home")},
+  pickLeague:d=>{if(guard(()=>ACT.pickLeague(d)))return;selectLeague(d.lid);go("lega")},
   async create(){
     const f=S.form;const name=(f.name||"").trim();const nick=(f.nick||"").trim();
     if(name.length<3)return err("Inserisci un nome di almeno 3 caratteri per la lega");
@@ -569,7 +569,8 @@ function render(){
   if(ADMIN_PAGE)return renderAdminPage(needLogin);
   const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":"TotoFanta";
   const bare=needLogin||recovery||S.boot||!S.authReady;
-  const leftBtn=bare?"<span></span>":(S.screen==="create"||S.screen==="leghe"||S.screen==="calendario"?`<button class="iconbtn" data-act="go" data-s="home" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
+  const backTo={create:"home",leghe:"home",calendario:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega"}[S.screen];
+  const leftBtn=bare?"<span></span>":(backTo?`<button class="iconbtn" data-act="go" data-s="${backTo}" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
   else if(needLogin)body=vLogin();
@@ -603,7 +604,7 @@ function banners(){
 }
 function vNav(){
   const L=league();const pend=isAdmin()?S.members.filter(m=>m.status==="pending").length:0;
-  const items=[["home","Home",I.home],["classifica","Classifica",I.rank],["lega","Lega",I.league]];
+  const items=[["home","Home",I.home],["classifica","Classifica",I.rank]];
   const cur=S.screen==="admin"?"lega":S.screen==="pronostici"?"home":S.screen;
   return `<nav class="nav" aria-label="Sezioni"><div class="col">${items.map(([k,t,ic])=>`<button data-act="go" data-s="${k}" ${cur===k?'aria-current="page"':""} ${!L&&k!=="home"?"disabled":""}>${ic}<span>${t}</span>${k==="lega"&&pend?`<span class="dot">${pend}</span>`:""}</button>`).join("")}</div></nav>`;
 }
@@ -616,9 +617,8 @@ function vDrawer(){
   return `<div class="scrim" data-act="closeAll"></div><aside class="drawer" aria-label="Menu">
   <div class="head">${who}</div>
   <nav>
-   <div class="grp">Generali</div>
-   <button class="dl" data-act="newLeague">Crea una lega</button><button class="dl" data-act="joinModal">Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">Le mie leghe</button><button class="dl" data-act="openCal">Calendario Serie A</button>
-   ${L?`<div class="grp">Lega</div><button class="dl" data-act="go" data-s="lega">Regolamento lega</button><button class="dl" data-act="go" data-s="lega">Invita alla tua lega</button>`:""}
+   <div class="grp">Leghe</div>
+   <button class="dl" data-act="newLeague">Crea una lega</button><button class="dl" data-act="joinModal">Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">Le mie leghe</button>
    ${admin?`<div class="grp">Opzioni admin</div><button class="dl" data-act="go" data-s="admin">Gestione lega</button>${pend?`<button class="dl" data-act="go" data-s="lega">Richieste di accesso (${pend})</button>`:""}<button class="dl danger" data-act="delLeague">Elimina lega</button>`:""}
   </nav></aside>`;
 }
@@ -796,7 +796,7 @@ function vStandings(L){
   if(!scored.length||S.rankView==="gen"){
     html+=`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
     ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos">${r.pos}</td><td class="nm">${esc(r.nick)}${r.bot?` <span class="chip">prova</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td><td class="n">${v(r.mq)}</td></tr>`).join("")}
-    </tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">${scored.length?`A pari punti decide il <b>Miglior punteggio di giornata (MP)</b>, poi la <b>Miglior quota (MQ)</b>.`:`I punti arrivano con i primi risultati, dalla ${L.startRound}ª giornata. Per ora l'ordine è alfabetico.`}</p></section>`;
+    </tbody></table></div>${scored.length?`<p class="small muted" style="font-family:var(--f-ui)">A pari punti decide il <b>Miglior punteggio di giornata (MP)</b>, poi la <b>Miglior quota (MQ)</b>.</p>`:""}</section>`;
   }else{
     const r=S.rounds.find(x=>"g"+x.n===S.rankView);if(!r){S.rankView="gen";return vStandings(L)}
     const day=approved().map(m=>({m,...roundScore(r,m._id)})).sort((a,b)=>(b.pts-a.pts)||(b.best-a.best)||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
