@@ -402,3 +402,58 @@ tr.me td{background:var(--blue-soft)}
 .code{border-radius:10px;font-family:var(--f-ui)}
 .banner{border-radius:12px}
 .statcard .stats>span{color:var(--ink);font-size:inherit;line-height:1.2}
+
+/* ---- Restyling A: altre schede ---- */
+.phdr{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.pagetitle{text-align:left;font-size:32px;line-height:1}
+h3{font-size:16px;font-weight:700}
+/* classifica */
+td.pos{width:56px}
+.posb{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 4px;border-radius:99px;font-family:var(--f-disp);font-weight:800;font-size:17px}
+.posb.p1{background:var(--blue);color:#fff}
+.posb.p2{background:var(--blue-soft);color:var(--blue-text)}
+.posb.p3{background:var(--field);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--line)}
+td.n b{font-family:var(--f-disp);font-weight:800;font-size:18px}
+.tbl{border:1px solid var(--line);background:var(--card)}
+td{border-top:1px solid var(--line)}
+/* menu laterale */
+.drawer .head{padding:calc(22px + env(safe-area-inset-top,0px)) 18px 20px max(18px,env(safe-area-inset-left,0px))}
+.profbtn{flex-direction:row;align-items:center;gap:12px;width:100%}
+.profbtn .pinfo{display:flex;flex-direction:column;min-width:0;flex:1}
+.profbtn .pinfo .small{opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profbtn .pgo{font-size:13px;font-weight:600;white-space:nowrap}
+.profbtn .small:last-child{margin-top:0;text-decoration:none}
+.bigav{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.2);color:#fff;display:grid;place-items:center;font-weight:700;font-size:19px;flex:none}
+.bigav.lg{width:60px;height:60px;font-size:24px;background:var(--blue);color:#fff}
+.drawer nav{gap:2px}
+.drawer .grp{margin-top:18px;margin-bottom:6px}
+.drawer .dl{display:flex;align-items:center;gap:12px;padding:10px 10px;font-size:15px;font-weight:600}
+.drawer .dl svg{width:20px;height:20px;flex:none;color:var(--muted)}
+.drawer .dl.danger svg{color:var(--lose)}
+/* profilo */
+.phero{display:flex;align-items:center;gap:14px;padding:4px 2px}
+.phero b{display:block;font-size:20px;font-weight:700}
+.phero .small{display:block}
+/* pagina lega */
+.lhero{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px}
+.lhero h2{font-size:26px;line-height:1.05;margin-bottom:6px;overflow-wrap:anywhere}
+.lhero .logo{width:56px;height:56px;font-size:24px;font-family:var(--f-disp)}
+.lchips{display:flex;flex-wrap:wrap;gap:6px}
+/* le mie leghe */
+.litem{padding:12px 14px}
+.litem.cur{border-color:var(--blue);background:var(--blue-soft)}
+.litem h3{font-size:16px}
+/* crea lega e login */
+.q{font-size:15px;font-weight:700}
+.opt{font-size:15px;font-weight:600}
+.gbtn{border-radius:12px}
+.sep{font-size:12px}
+.modal h2{font-family:var(--f-disp);font-weight:800;font-size:24px;text-transform:uppercase;letter-spacing:.02em;line-height:1.05}
+.err{color:var(--lose)}
+/* classifica più compatta sul telefono */
+th,td{padding:10px 8px}
+td.pos{width:44px;padding-inline:6px}
+td.nm{min-width:80px;overflow-wrap:anywhere}
+td.nm .chip{font-size:10px;padding:2px 6px;margin-left:4px;vertical-align:1px}
+td.n,th.n{padding-inline:6px}
+.btn.danger{background:#C8283A;color:#fff}
