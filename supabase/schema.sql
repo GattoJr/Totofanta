@@ -144,10 +144,14 @@ language sql stable security definer set search_path = '' as $$
   select coalesce((select c.published from public.calendar_rounds c where c.n = rn), false);
 $$;
 
--- La partita è iniziata?
+-- La giornata di questa partita è iniziata? (fischio d'inizio della sua prima partita)
+-- Da quel momento le schedine di tutti sono visibili agli iscritti della lega.
 create or replace function public.fixture_locked(fid int) returns boolean
 language sql stable security definer set search_path = '' as $$
-  select coalesce((select f.kickoff is not null and now() >= f.kickoff from public.fixtures f where f.id = fid), true);
+  select coalesce(
+    (select now() >= (select min(g.kickoff) from public.fixtures g where g.n = f.n)
+       from public.fixtures f where f.id = fid),
+    false);
 $$;
 
 -- Si può ancora pronosticare? (giornata pubblicata, quote presenti,
@@ -299,7 +303,7 @@ revoke insert, delete on public.calendar_rounds from authenticated, anon;
 
 -- Pronostici:
 --  · i propri si vedono sempre;
---  · quelli degli altri solo dopo il calcio d'inizio della partita;
+--  · quelli degli altri dal fischio d'inizio della prima partita della giornata;
 --  · si scrivono solo prima del fischio d'inizio della prima partita della giornata, a giornata pubblicata;
 --  · l'admin della lega può scrivere quelli dei giocatori di prova.
 create policy picks_select on public.picks for select to authenticated

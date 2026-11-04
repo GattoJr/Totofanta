@@ -773,11 +773,11 @@ function vPicks(L){
   return html;
 }
 function vOthers(r){
-  if(!r.matches.some(m=>matchLocked(r,m)))return "";
+  if(!roundLocked(r))return "";
   if(!S.showOthers)return `<button class="btn wide sec" data-act="others">Vedi le schedine di tutti</button>`;
   const head=r.matches.map(m=>`<th style="text-align:center" title="${esc(m.home)}–${esc(m.away)}">${abbr(m.home)}<br>${abbr(m.away)}</th>`).join("");
   const body=approved().map(pl=>{const pk=pickDoc(r._id,pl._id)?.picks||{};const s=roundScore(r,pl._id);
-    return `<tr class="${pl._id===S.uid?"me":""}"><td>${esc(pl.nick)}</td>${r.matches.map(m=>{if(!matchLocked(r,m))return `<td class="c muted">·</td>`;const p=pk[m.id];const e=esito(m);return `<td class="c ${e&&p?(p===e?"won":"lost"):""}">${p||"–"}</td>`}).join("")}<td class="n">${f2(s.pts)}</td></tr>`}).join("");
+    return `<tr class="${pl._id===S.uid?"me":""}"><td>${esc(pl.nick)}</td>${r.matches.map(m=>{const p=pk[m.id];const e=esito(m);return `<td class="c ${e&&p?(p===e?"won":"lost"):""}">${p||"–"}</td>`}).join("")}<td class="n">${f2(s.pts)}</td></tr>`}).join("");
   return `<section class="card"><div class="row"><h3 class="grow">Schedine della ${r.n}ª giornata</h3><button class="btn ghost sm" data-act="others">Nascondi</button></div><div class="tbl"><table><thead><tr><th>Giocatore</th>${head}<th class="n">Pt</th></tr></thead><tbody>${body}</tbody></table></div></section>`;
 }
 
@@ -894,7 +894,7 @@ function vAdmin(L){
   <section class="card"><h3>Giocatori di prova</h3><p class="small muted" style="font-family:var(--f-ui)">Per testare la lega anche da solo: aggiungi giocatori fittizi e fagli giocare schedine casuali. In classifica hanno l'etichetta “prova”.</p>
    <div class="row"><button class="btn sm sec" data-act="addBot">Aggiungi giocatore di prova</button><span class="small muted">${bots.length} in lega</span></div>
    ${r?`<button class="btn sm sec" data-act="botPicks" data-r="${r._id}" style="align-self:flex-start">Schedine casuali per la ${r.n}ª giornata</button>`:`<p class="small muted" style="font-family:var(--f-ui)">Le schedine casuali si possono generare quando una giornata è pubblicata.</p>`}
-   ${ONLINE?`<p class="small muted" style="font-family:var(--f-ui)">Nota: i pronostici degli altri giocatori (anche di prova) restano nascosti fino al calcio d'inizio.</p>`:""}</section>`;
+   ${ONLINE?`<p class="small muted" style="font-family:var(--f-ui)">Nota: i pronostici degli altri giocatori (anche di prova) restano nascosti fino al fischio d'inizio della prima partita della giornata.</p>`:""}</section>`;
 }
 
 /* aggiorna countdown e blocchi ogni 30 s se non si sta scrivendo */
