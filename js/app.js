@@ -312,7 +312,7 @@ function handleHash(){
   if(m){let name="";try{name=decodeURIComponent(m[1])}catch{name=m[1]}if(name.trim())openJoin(name.trim())}
 }
 function openJoin(name){
-  S.form={name,pw:"",nick:"",fromLink:true,kind:undefined};S.formErr="";S.modal="join";S.drawer=false;fetchJoinKind();
+  S.form={name,linkName:name,pw:"",nick:"",fromLink:true,kind:undefined};S.formErr="";S.modal="join";S.drawer=false;fetchJoinKind();
 }
 /* privata o pubblica? serve a chiedere la password solo quando serve (richiede l'accesso) */
 function fetchJoinKind(){
@@ -393,7 +393,6 @@ const ACT={
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
   newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?nextCalendarRound():1),nick:"",logo:null};go("create")},
   joinModal:()=>{S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="";S.modal="join";S.drawer=false;render()},
-  editName:()=>{S.form.fromLink=false;S.form.kind=undefined;S.formErr="";render()},
   pickLeague:d=>{selectLeague(d.lid);go("home")},
   async create(){
     const f=S.form;const name=(f.name||"").trim();const nick=(f.nick||"").trim();
@@ -406,7 +405,7 @@ const ACT={
   async join(){
     const f=S.form;
     if(!(f.name||"").trim())return err("Inserisci il nome della lega");
-    if(f.fromLink&&f.kind==="private"&&!(f.pw||""))return err("Inserisci la password della lega");
+    if(!(f.fromLink&&(f.name||"").trim()===(f.linkName||"").trim()&&f.kind==="public")&&f.fromLink&&!(f.pw||""))return err("Inserisci la password della lega");
     if((f.nick||"").trim().length<2)return err("Scegli il tuo nickname");
     S.formErr="";
     try{S.busy=true;render();const r=await B.joinLeague(f);toast(r.status==="approved"?"Sei dentro!":"Richiesta in attesa dell'admin");
@@ -611,26 +610,22 @@ function vNewPw(){
    <button class="btn block" type="submit" ${S.busy?"disabled":""}>Salva password</button></form>`;
 }
 
+/* finestra 2.1_popup: nome + password lega. Dal link d'invito il nome è già compilato. */
 function vJoin(){
-  const f=S.form;const link=f.fromLink&&f.name;
-  const pwField=`<input type="password" id="jf-pw" data-bind="form.pw" value="${esc(f.pw)}" placeholder="${link?"Password della lega":"Password (solo per le leghe private)"}" autocomplete="off">`;
-  let head,fields;
-  if(link){
-    head=`<h2 id="jt">Unisciti a “${esc(f.name)}”</h2>`;
-    fields=f.kind==="none"?`<p class="err">Nessuna lega con questo nome: forse è stata rinominata o eliminata.</p>`
-      :f.kind==="public"?`<p class="small" style="font-family:var(--f-ui)">Lega pubblica: scegli il tuo nickname ed entri subito.</p>`
-      :f.kind==="private"?`<p class="small" style="font-family:var(--f-ui)">Lega privata: inserisci la password che ti ha dato l'admin.</p>${pwField}`
-      :pwField;
-  }else{
-    head=`<h2 id="jt">Inserisci nome e password della lega per unirti</h2>`;
-    fields=`<input type="text" id="jf-name" data-bind="form.name" value="${esc(f.name)}" placeholder="Nome lega" autocomplete="off">${pwField}`;
-  }
+  const f=S.form;
+  const sameName=f.fromLink&&(f.name||"").trim()===(f.linkName||"").trim();
+  const isPublic=sameName&&f.kind==="public";const missing=sameName&&f.kind==="none";
   return `<div class="scrim" data-act="closeAll"></div><form class="card modal" role="dialog" aria-modal="true" aria-labelledby="jt" data-submit="join" novalidate>
-  ${head}${fields}
-  <input type="text" id="jf-nick" data-bind="form.nick" value="${esc(f.nick)}" placeholder="Il tuo nickname" maxlength="20">
+  <h2 id="jt">Inserisci nome e password della lega per unirti</h2>
+  <label class="small" for="jf-name" style="font-family:var(--f-ui)">Nome lega</label>
+  <input type="text" id="jf-name" data-bind="form.name" data-rerender value="${esc(f.name)}" placeholder="Nome lega" autocomplete="off">
+  ${missing?`<p class="err">Nessuna lega con questo nome: forse è stata rinominata o eliminata.</p>`:""}
+  ${isPublic?`<p class="small muted" style="font-family:var(--f-ui)">Lega pubblica: non serve la password.</p>`
+    :`<label class="small" for="jf-pw" style="font-family:var(--f-ui)">Password lega</label><input type="password" id="jf-pw" data-bind="form.pw" value="${esc(f.pw)}" placeholder="${f.fromLink?"Password lega":"Password lega (solo leghe private)"}" autocomplete="off">`}
+  <label class="small" for="jf-nick" style="font-family:var(--f-ui)">Il tuo nickname</label>
+  <input type="text" id="jf-nick" data-bind="form.nick" value="${esc(f.nick)}" placeholder="Come ti vedranno gli altri" maxlength="20">
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
-  <button class="btn block" type="submit" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Unisciti"}</button>
-  ${link?`<button class="btn ghost" type="button" data-act="editName">È un'altra lega?</button>`:""}</form>`;
+  <button class="btn block" type="submit" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Unisciti"}</button></form>`;
 }
 function logoHtml(L){return `<div class="logo">${L.logo?`<img src="${esc(L.logo)}" alt="">`:esc((L.name||"?").trim()[0]?.toUpperCase())}</div>`}
 
