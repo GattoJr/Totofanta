@@ -258,6 +258,22 @@ const Online={
   inviteCode(L){return S.invite[L._id]||""},
   // ---- account
   async signIn(email,pw){this.check(await this.sb.auth.signInWithPassword({email,password:pw}))},
+  // Accesso con Google Identity Services: la finestra di Google mostra il sito, non l'indirizzo di Supabase.
+  gsi:{raw:null,ready:false,timer:null},
+  async mountGoogle(){
+    const el=document.getElementById("gsi-btn");if(!el)return;
+    const g=window.google?.accounts?.id;
+    if(!g){if(window.__gsiErr){S.gsiFallback=true;render();return}clearTimeout(this.gsi.timer);this.gsi.timer=setTimeout(()=>this.mountGoogle(),300);return}
+    if(!this.gsi.ready){
+      this.gsi.raw=rid(32);const hashed=await sha(this.gsi.raw);
+      g.initialize({client_id:CFG.googleClientId,nonce:hashed,ux_mode:"popup",use_fedcm_for_button:true,
+        callback:async r=>{S.formErr="";S.busy=true;render();
+          try{this.check(await this.sb.auth.signInWithIdToken({provider:"google",token:r.credential,nonce:this.gsi.raw}));this.gsi.ready=false}
+          catch(e){S.formErr=itMsg(e);this.gsi.ready=false}finally{S.busy=false;render()}}});
+      this.gsi.ready=true;
+    }
+    el.innerHTML="";g.renderButton(el,{type:"standard",theme:"outline",size:"large",text:"continue_with",shape:"rectangular",locale:"it",logo_alignment:"center",width:Math.min(400,Math.max(200,el.clientWidth||320))});
+  },
   async signInGoogle(){
     if(S.modal==="join"&&S.form.code)lsSet("totofanta-pending-invite",S.form.code);  // l'invito sopravvive al passaggio da Google
     this.check(await this.sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+location.pathname}}));
@@ -517,6 +533,7 @@ function render(){
   app.innerHTML=`<header class="top"><div class="col">${leftBtn}<h1>${title}</h1><span></span></div></header>
   <main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${S.help?vHelp():""}`;
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
+  if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
 }
 function banners(){
   if(WANT_ONLINE&&!ONLINE)return `<div class="banner"><b>Non riesco a collegarmi al database.</b> Controlla la connessione e ricarica la pagina. Nel frattempo il sito funziona solo in modalità prova.</div>`;
@@ -552,7 +569,7 @@ function vLogin(){
   const f=S.authForm;const up=f.mode==="signup";
   return `<form class="card" data-submit="login" novalidate>
    <h2 class="center">${up?"Crea il tuo account":"Login"}</h2>
-   <button class="btn block gbtn" type="button" data-act="google" ${S.busy?"disabled":""}><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.3 5.7c4.3-3.9 7-9.8 7-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.3-5.7c-2.2 1.5-5 2.3-8.6 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>Continua con Google</button>
+   ${CFG.googleClientId&&!S.gsiFallback?`<div id="gsi-btn" class="gsi"></div>`:`<button class="btn block gbtn" type="button" data-act="google" ${S.busy?"disabled":""}><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.3 5.7c4.3-3.9 7-9.8 7-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.3-5.7c-2.2 1.5-5 2.3-8.6 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>Continua con Google</button>`}
    <div class="sep"><span>oppure con email</span></div>
    ${S.authMsg?`<p class="tip">${esc(S.authMsg)}</p>`:""}
    <input type="email" id="au-email" data-bind="authForm.email" value="${esc(f.email)}" placeholder="Email" autocomplete="email" inputmode="email" style="background:var(--field)">
