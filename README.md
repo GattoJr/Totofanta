@@ -6,14 +6,16 @@ Versione attuale: prototipo con la sola modalità **Quote**.
 
 ## Come funziona
 
-- Il calendario Serie A 2026/27 (squadre, orari, quote, risultati) è **unico per tutte le leghe** e lo gestisce l'**amministratore del sito** dal Pannello amministratore.
+- Il calendario Serie A 2026/27 (squadre, orari, quote, risultati) è **unico per tutte le leghe** e lo gestisce l'**amministratore del sito** dal Pannello amministratore, che sta su una pagina a parte (`admin.html`) senza collegamenti dal sito.
 - Ogni lega gioca in automatico dalla sua giornata di inizio alla 38ª: l'admin della lega gestisce solo i partecipanti (e i giocatori di prova).
+- Leghe private: si entra con nome della lega + password. Il link d'invito (`#lega=<nome>`) apre la schermata con il nome già inserito. Leghe pubbliche: basta il nome.
 - Le quote di una giornata sono nascoste finché l'amministratore non la pubblica; i pronostici si chiudono al calcio d'inizio di ogni partita.
 
 ## Struttura
 
 ```
 index.html            pagina dell'app
+admin.html            pannello amministratore del sito (stessa app, indirizzo separato)
 css/style.css         grafica (stile dei mockup Figma)
 js/config.js          indirizzo e chiave pubblica del progetto Supabase
 js/app.js             logica del gioco: login, leghe, pronostici, classifica, pannello amministratore
@@ -30,11 +32,11 @@ supabase/reset.sql    azzera il database (cancella tutto lo schema public)
 3. New query: incolla `supabase/calendario-2026-27.sql` › Run.
 4. Amministratore del sito:
    `insert into public.site_admins select id from auth.users where email = 'TUA-EMAIL';`
-5. Authentication › URL Configuration: Site URL `https://gattojr.github.io/Totofanta/`, e la stessa in Redirect URLs.
+5. Authentication › URL Configuration: Site URL `https://gattojr.github.io/Totofanta/`; in Redirect URLs `https://gattojr.github.io/Totofanta/**` (copre anche `admin.html`).
 6. Per i test: Authentication › Sign In / Providers › Email › disattiva *Confirm email* (il servizio email gratuito di Supabase invia pochissime mail all'ora).
 
 Regole principali garantite dal database:
-- le leghe le vede solo chi ne fa parte; password e codice d'invito non sono leggibili;
+- le leghe le vede solo chi ne fa parte; le password non sono leggibili; nelle leghe private si entra solo con la password;
 - calendario, quote, risultati e pubblicazione delle giornate li cambia solo l'amministratore del sito;
 - una giornata si pubblica solo con orario e quote di tutte le 10 partite; prima della pubblicazione le quote non sono leggibili;
 - i pronostici si possono cambiare solo prima del calcio d'inizio e quelli degli altri si vedono solo dopo;

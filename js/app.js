@@ -13,7 +13,7 @@ const COLORS={Atalanta:["#1e71b8","#111"],Bologna:["#a21c26","#1a2f48"],Cagliari
 const BOT_NAMES=["Zona Cesarini","Catenaccio","Bomber86","Il Mister","Tiki Taka","Panchinaro","Fuorigioco","Cucchiaio","Var Checking","Contropiede"];
 const TB_LABEL={best_day:"Miglior punteggio di giornata",highest_odd:"Quota più alta"};
 const HELP={
-  access:"Privata: le richieste di accesso alla lega dovranno essere approvate dall'admin.\nPubblica: chiunque può accedere alla lega con il nome o il codice d'invito.",
+  access:"Privata: si entra con il nome della lega e la password che scegli qui. Il link d'invito apre già la schermata con il nome della lega: basta scrivere la password.\nPubblica: chiunque può entrare con il nome della lega o con il link d'invito, senza password.",
   tie:"Se due giocatori finiscono a pari punti, vince chi ha il punteggio di giornata più alto (o la quota indovinata più alta). Se c'è ancora parità si confronta il secondo valore, e così via.",
 };
 
@@ -21,6 +21,8 @@ const HELP={
 const CFG=window.TOTOFANTA_CONFIG||{};
 const WANT_ONLINE=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey);
 const ONLINE=WANT_ONLINE&&!!(window.supabase&&window.supabase.createClient);
+/* pagina separata del pannello amministratore (admin.html): nessun collegamento dal sito */
+const ADMIN_PAGE=!!window.TOTOFANTA_ADMIN;
 
 /* ===================== Utility ===================== */
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -112,14 +114,12 @@ const Local={
     await this.addToMe(lid);return lid;
   },
   async joinLeague(f){
-    let L;
-    if(f.useCode){L=S.leagues.find(l=>l.inviteCode===(f.code||"").trim().toUpperCase());if(!L)throw new Error("Codice invito non valido")}
-    else{L=S.leagues.find(l=>l.nameKey===(f.name||"").trim().toLowerCase());if(!L)throw new Error("Nessuna lega con questo nome")}
+    const L=S.leagues.find(l=>l.nameKey===(f.name||"").trim().toLowerCase());if(!L)throw new Error("Nessuna lega con questo nome");
     if((S.me.leagues||[]).includes(L._id))return{lid:L._id,status:"approved"};
-    if(!f.useCode&&L.type==="private"&&await sha(f.pw||"")!==L.pwHash)throw new Error("Password errata");
+    if(L.type==="private"&&await sha(f.pw||"")!==L.pwHash)throw new Error("Password errata");
     const nick=(f.nick||"").trim();if(nick.length<2)throw new Error("Scegli il tuo nickname");
     const taken=LocalStore.list(`leagues/${L._id}/members`).some(m=>m.nick.toLowerCase()===nick.toLowerCase());if(taken)throw new Error("Nickname già usato in questa lega");
-    const status=L.type==="public"?"approved":"pending";
+    const status="approved";
     await LocalStore.set(`leagues/${L._id}/members/${S.uid}`,{nick,status,joinedAt:Date.now()});
     await this.addToMe(L._id);return{lid:L._id,status};
   },
@@ -132,7 +132,7 @@ const Local={
   async addBot(name){await LocalStore.set(`leagues/${S.lid}/members/bot-${rid(6)}`,{nick:name,status:"approved",bot:true,joinedAt:Date.now()})},
   async botPicks(r,bots){for(const b of bots){const pk={};r.matches.forEach(m=>{if(m.o1)pk[m.id]=sampleEsito(m)});await LocalStore.set(`leagues/${S.lid}/picks/${r._id}~${b._id}`,{uid:b._id,round:r._id,picks:pk,updatedAt:Date.now()})}},
   async deleteLeague(){const lid=S.lid;for(const p of S.picks)await LocalStore.del(`leagues/${lid}/picks/${p._id}`);for(const m of S.members)await LocalStore.del(`leagues/${lid}/members/${m._id}`);await LocalStore.del(`leagues/${lid}`);await this.removeFromMe(lid)},
-  inviteCode(L){return L.inviteCode},
+  async leagueType(name){return LocalStore.list("leagues").find(l=>l.nameKey===(name||"").trim().toLowerCase())?.type||null},
   // calendario: accoppiamenti da js/calendario.js, orari modificati salvati nel browser
   fixturesFrom(docs){const ov={};for(const d of docs)ov[d._id]=d;S.odds={};
     S.fixtures=(window.CALENDARIO_SERIE_A||[]).map(([n,pos,home,away,kickoff,day])=>{const id=n*100+pos;const o=ov[id];if(o?.o1)S.odds[id]={o1:o.o1,oX:o.oX,o2:o.o2};return{id,n,pos,home,away,kickoff:o&&"kickoff" in o?o.kickoff:kickoff,day,hg:o?.hg??null,ag:o?.ag??null}})},
@@ -177,11 +177,12 @@ const Online={
     if(this.chan){this.sb.removeChannel(this.chan);this.chan=null}
     if(!uid){S.leagues=[];S.me={leagues:[]};S.meLoaded=true;S.lid=null;S.members=[];S.rounds=[];S.picks=[];S.fixtures=[];S.odds={};S.calRounds={};S.siteAdmin=false;render();return}
     if(location.hash.includes("access_token")||location.hash.includes("type=")||/[?&]code=/.test(location.search)){try{history.replaceState(null,"",location.pathname)}catch{}}
-    const inv=lsGet("totofanta-pending-invite");if(inv){lsSet("totofanta-pending-invite","");S.modal="join";S.form={code:inv,useCode:true,name:"",pw:"",nick:""}}
+    const inv=ADMIN_PAGE?"":lsGet("totofanta-pending-invite");if(inv){lsSet("totofanta-pending-invite","");openJoin(inv)}
     S.meLoaded=false;render();
     await Promise.all([this.refreshLeagues(),this.loadFixtures()]);
     pickDefaultLeague();
     this.subscribe();
+    fetchJoinKind();
     render();
   },
   subscribe(){
@@ -221,14 +222,12 @@ const Online={
   async setPublished(n,v){const d=this.check(await this.sb.from("calendar_rounds").update({published:v}).eq("n",n).select("n"));if(!d.length)throw new Error("Non hai i permessi di amministratore");await this.refresh()},
   async loadLeague(lid){
     const seq=++this.loadSeq;const sb=this.sb;
-    const [mem,pk,inv]=await Promise.all([
+    const [mem,pk]=await Promise.all([
       sb.from("members").select("*").eq("league_id",lid),
       sb.from("picks").select("member_id,fixture_id,pick").eq("league_id",lid),
-      sb.rpc("get_invite_code",{p_league:lid}),
     ]);
     if(seq!==this.loadSeq||S.lid!==lid)return;
     const e=mem.error||pk.error;if(e){console.warn(e);toast("Errore nel caricare la lega: "+itMsg(e));return}
-    S.invite[lid]=inv.data||null;
     S.members=mem.data.map(m=>({_id:m.user_id||m.id,mid:m.id,nick:m.nickname,status:m.status,bot:m.is_bot,joinedAt:Date.parse(m.joined_at)}));
     const memberKey={};for(const m of S.members)memberKey[m.mid]=m._id;
     const docs={};
@@ -242,7 +241,7 @@ const Online={
     await this.refreshLeagues();return lid;
   },
   async joinLeague(f){
-    const r=this.check(await this.sb.rpc("join_league",{p_name:f.useCode?null:(f.name||"").trim(),p_password:f.useCode?null:(f.pw||""),p_code:f.useCode?(f.code||"").trim():null,p_nickname:(f.nick||"").trim()}));
+    const r=this.check(await this.sb.rpc("join_league",{p_name:(f.name||"").trim(),p_password:f.pw||"",p_code:null,p_nickname:(f.nick||"").trim()}));
     await this.refreshLeagues();return{lid:r.league_id,status:r.status};
   },
   async setPick(r,m,p){
@@ -255,7 +254,7 @@ const Online={
   async addBot(name){this.check(await this.sb.from("members").insert({league_id:S.lid,nickname:name,status:"approved",is_bot:true}));await this.refresh()},
   async botPicks(r,bots){const rows=[];for(const b of bots)for(const m of r.matches)if(m.o1)rows.push({member_id:b.mid,fixture_id:+m.id,pick:sampleEsito(m)});if(rows.length)this.check(await this.sb.from("picks").upsert(rows,{onConflict:"member_id,fixture_id"}));await this.refresh()},
   async deleteLeague(){this.check(await this.sb.from("leagues").delete().eq("id",S.lid));await this.refreshLeagues()},
-  inviteCode(L){return S.invite[L._id]||""},
+  async leagueType(name){const r=await this.sb.rpc("league_join_info",{p_name:(name||"").trim()});return r.error?null:r.data||null},
   // ---- account
   async signIn(email,pw){this.check(await this.sb.auth.signInWithPassword({email,password:pw}))},
   // Accesso con Google Identity Services: la finestra di Google mostra il sito, non l'indirizzo di Supabase.
@@ -275,7 +274,7 @@ const Online={
     el.innerHTML="";g.renderButton(el,{type:"standard",theme:"outline",size:"large",text:"continue_with",shape:"rectangular",locale:"it",logo_alignment:"center",width:Math.min(400,Math.max(200,el.clientWidth||320))});
   },
   async signInGoogle(){
-    if(S.modal==="join"&&S.form.code)lsSet("totofanta-pending-invite",S.form.code);  // l'invito sopravvive al passaggio da Google
+    if(S.modal==="join"&&S.form.fromLink&&S.form.name)lsSet("totofanta-pending-invite",S.form.name);  // l'invito sopravvive al passaggio da Google
     this.check(await this.sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+location.pathname}}));
   },
   async signUp(email,pw){const d=this.check(await this.sb.auth.signUp({email,password:pw,options:{emailRedirectTo:location.origin+location.pathname}}));return !!d.session},
@@ -291,7 +290,7 @@ async function boot(){
   render();
   handleHash();
   try{await B.init()}catch(e){console.error(e);toast("Avvio non riuscito: "+itMsg(e))}
-  S.boot=false;render();
+  S.boot=false;fetchJoinKind();render();
 }
 function myLeagues(){return (S.me.leagues||[]).map(id=>S.leagues.find(l=>l._id===id)).filter(Boolean)}
 function pickDefaultLeague(){
@@ -306,10 +305,21 @@ function selectLeague(lid){
   B.openLeague(lid);render();
 }
 function go(screen){S.screen=screen;S.drawer=false;S.modal=null;S.help=null;S.confirm=null;S.formErr="";render();window.scrollTo(0,0)}
+/* link d'invito: #lega=<nome della lega> apre la schermata d'iscrizione con il nome già inserito */
 function handleHash(){
-  const m=(location.hash||"").replace("#","").match(/^invito-([A-Za-z0-9]+)$/);
-  if(m){S.modal="join";S.form={code:m[1].toUpperCase(),useCode:true,name:"",pw:"",nick:""}}
+  if(ADMIN_PAGE)return;
+  const m=(location.hash||"").match(/^#lega=(.+)$/);
+  if(m){let name="";try{name=decodeURIComponent(m[1])}catch{name=m[1]}if(name.trim())openJoin(name.trim())}
 }
+function openJoin(name){
+  S.form={name,pw:"",nick:"",fromLink:true,kind:undefined};S.formErr="";S.modal="join";S.drawer=false;fetchJoinKind();
+}
+/* privata o pubblica? serve a chiedere la password solo quando serve (richiede l'accesso) */
+function fetchJoinKind(){
+  const f=S.form;if(!S.uid||S.modal!=="join"||!f.fromLink||f.kind!==undefined)return;const name=f.name;
+  B.leagueType(name).then(k=>{if(S.modal==="join"&&S.form.name===name){S.form.kind=k||"none";render()}}).catch(()=>{});
+}
+const inviteUrl=L=>location.href.split("#")[0]+"#lega="+encodeURIComponent(L.name);
 window.addEventListener("hashchange",()=>{handleHash();render()});
 
 /* ===================== Selettori ===================== */
@@ -382,8 +392,8 @@ const ACT={
   closeAll:()=>{S.drawer=false;S.modal=null;S.help=null;render()},
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
   newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?nextCalendarRound():1),nick:"",logo:null};go("create")},
-  joinModal:()=>{S.form={name:"",pw:"",nick:"",code:"",useCode:false};S.formErr="";S.modal="join";S.drawer=false;render()},
-  toggleCode:()=>{S.form.useCode=!S.form.useCode;S.formErr="";render()},
+  joinModal:()=>{S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="";S.modal="join";S.drawer=false;render()},
+  editName:()=>{S.form.fromLink=false;S.form.kind=undefined;S.formErr="";render()},
   pickLeague:d=>{selectLeague(d.lid);go("home")},
   async create(){
     const f=S.form;const name=(f.name||"").trim();const nick=(f.nick||"").trim();
@@ -395,10 +405,11 @@ const ACT={
   },
   async join(){
     const f=S.form;
-    if(f.useCode?!(f.code||"").trim():!(f.name||"").trim())return err(f.useCode?"Inserisci il codice d'invito":"Inserisci il nome della lega");
+    if(!(f.name||"").trim())return err("Inserisci il nome della lega");
+    if(f.fromLink&&f.kind==="private"&&!(f.pw||""))return err("Inserisci la password della lega");
     if((f.nick||"").trim().length<2)return err("Scegli il tuo nickname");
     S.formErr="";
-    try{S.busy=true;render();const r=await B.joinLeague(f);toast(r.status==="approved"?"Sei dentro!":"Richiesta inviata all'admin");
+    try{S.busy=true;render();const r=await B.joinLeague(f);toast(r.status==="approved"?"Sei dentro!":"Richiesta in attesa dell'admin");
       if(location.hash)try{history.replaceState(null,"",location.pathname+location.search)}catch{}
       selectLeague(r.lid);go("home")}
     catch(e){S.formErr=itMsg(e)}finally{S.busy=false;render()}
@@ -414,8 +425,7 @@ const ACT={
     render();
     pickChain=pickChain.then(()=>B.setPick(r,m,newP)).then(()=>toast(newP?"Pronostico salvato":"Pronostico tolto")).catch(e=>{toast(itMsg(e).includes("row-level")?"Pronostico non salvato: la partita è già iniziata o le quote non sono pubblicate":itMsg(e));ONLINE&&Online.refresh()});
   },
-  copyCode:async d=>{try{await navigator.clipboard.writeText(d.code);toast("Codice copiato")}catch{toast("Seleziona il codice e copialo")}},
-  copyLink:async d=>{const url=location.href.split("#")[0]+"#invito-"+d.code;try{await navigator.clipboard.writeText(url);toast("Link d'invito copiato")}catch{location.hash="invito-"+d.code;toast("Copia il link dalla barra degli indirizzi")}},
+  copyLink:async()=>{const L=league();if(!L)return;const url=inviteUrl(L);try{await navigator.clipboard.writeText(url);toast("Link d'invito copiato")}catch{prompt("Copia il link d'invito:",url)}},
   // ---- admin
   approve:d=>safe(async()=>{await B.approve(S.members.find(x=>x._id===d.u));toast("Giocatore approvato")}),
   reject:d=>safe(async()=>{await B.removeMember(S.members.find(x=>x._id===d.u));toast("Richiesta rifiutata")}),
@@ -427,7 +437,6 @@ const ACT={
   // ---- calendario Serie A (pubblico) e pannello amministratore
   openCal:d=>{S.calN=+d.n||S.calN||nextCalendarRound();go("calendario")},
   calStep:d=>{S.calN=Math.min(38,Math.max(1,(S.calN||nextCalendarRound())+(+d.d)));render()},
-  openPanel:d=>{S.admN=+d.n||S.admN||adminDefaultRound();S.admEdit=null;go("pannello")},
   admStep:d=>{S.admN=Math.min(38,Math.max(1,(S.admN||adminDefaultRound())+(+d.d)));S.admEdit=null;S.formErr="";render()},
   admUndo:()=>{S.admEdit=null;S.formErr="";render()},
   admSim:()=>{const now=Date.now();let k=0;for(const f of fixturesOf(S.admN)){const e=S.admEdit?.e[f.id];if(!e)continue;const t=e.k?+new Date(e.k):NaN;
@@ -516,9 +525,10 @@ function render(){
   const L=league();S.rounds=buildRounds(L);
   const needLogin=ONLINE&&S.authReady&&!S.uid;
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
-  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":S.screen==="pannello"?"Amministratore":"TotoFanta";
+  if(ADMIN_PAGE)return renderAdminPage(needLogin);
+  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":"TotoFanta";
   const bare=needLogin||recovery||S.boot||!S.authReady;
-  const leftBtn=bare?"<span></span>":(S.screen==="create"||S.screen==="leghe"||S.screen==="calendario"||S.screen==="pannello"?`<button class="iconbtn" data-act="go" data-s="home" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
+  const leftBtn=bare?"<span></span>":(S.screen==="create"||S.screen==="leghe"||S.screen==="calendario"?`<button class="iconbtn" data-act="go" data-s="home" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
   else if(needLogin)body=vLogin();
@@ -526,12 +536,22 @@ function render(){
   else if(S.screen==="create")body=vCreate();
   else if(S.screen==="leghe")body=vMyLeagues();
   else if(S.screen==="calendario")body=vCalendar();
-  else if(S.screen==="pannello")body=S.siteAdmin?vPanel():vCalendar();
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
   app.innerHTML=`<header class="top"><div class="col">${leftBtn}<h1>${title}</h1><span></span></div></header>
   <main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${S.help?vHelp():""}`;
+  if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
+  if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
+}
+function renderAdminPage(needLogin){
+  let body;
+  if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
+  else if(needLogin)body=vLogin();
+  else if(!S.siteAdmin)body=`<section class="card"><p class="cta-title">Accesso non consentito</p><p class="center small" style="font-family:var(--f-ui)">L'account <b>${esc(S.email)}</b> non è amministratore del sito.</p><button class="btn wide sec" data-act="logout">Esci</button></section>`;
+  else body=(ONLINE?`<div class="row"><span class="grow small muted" style="font-family:var(--f-ui)">${esc(S.email)}</span><button class="btn sm ghost" data-act="logout">Esci</button></div>`:"")+vPanel();
+  const a=document.activeElement;const fid=a&&a.id;let ss=null,se=null;try{ss=a.selectionStart;se=a.selectionEnd}catch{}
+  app.innerHTML=`<header class="top"><div class="col"><span></span><h1>Amministratore</h1><span></span></div></header><main class="col">${WANT_ONLINE&&!ONLINE?banners():""}${body}</main>${S.help?vHelp():""}`;
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
   if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
 }
@@ -557,9 +577,8 @@ function vDrawer(){
   <nav>
    <div class="grp">Generali</div>
    <button class="dl" data-act="newLeague">Crea una lega</button><button class="dl" data-act="joinModal">Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">Le mie leghe</button><button class="dl" data-act="openCal">Calendario Serie A</button>
-   ${S.siteAdmin?`<div class="grp">Amministratore del sito</div><button class="dl" data-act="openPanel">Pannello amministratore</button>`:""}
    ${L?`<div class="grp">Lega</div><button class="dl" data-act="go" data-s="lega">Regolamento lega</button><button class="dl" data-act="go" data-s="lega">Invita alla tua lega</button>`:""}
-   ${admin?`<div class="grp">Opzioni admin</div><button class="dl" data-act="go" data-s="admin">Gestione lega</button><button class="dl" data-act="go" data-s="lega">Richieste di accesso${pend?` (${pend})`:""}</button><button class="dl danger" data-act="delLeague">Elimina lega</button>`:""}
+   ${admin?`<div class="grp">Opzioni admin</div><button class="dl" data-act="go" data-s="admin">Gestione lega</button>${pend?`<button class="dl" data-act="go" data-s="lega">Richieste di accesso (${pend})</button>`:""}<button class="dl danger" data-act="delLeague">Elimina lega</button>`:""}
   </nav></aside>`;
 }
 function vHelp(){return `<div class="scrim" data-act="closeAll"></div><div class="card modal" role="dialog" aria-modal="true"><p style="white-space:pre-line">${esc(HELP[S.help])}</p><button class="btn sm" data-act="closeAll" style="align-self:flex-end">Ho capito</button></div>`}
@@ -577,10 +596,10 @@ function vLogin(){
    ${up?`<input type="password" id="au-pw2" data-bind="authForm.pw2" value="${esc(f.pw2)}" placeholder="Ripeti la password" autocomplete="new-password">`:""}
    ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
    <button class="btn block" type="submit" ${S.busy?"disabled":""}>${S.busy?"Attendi…":up?"Registrati":"Accedi"}</button>
-   ${up?`<button class="btn ghost" type="button" data-act="authMode" data-m="login">Hai già un account? Accedi</button>`
+   ${ADMIN_PAGE?"":up?`<button class="btn ghost" type="button" data-act="authMode" data-m="login">Hai già un account? Accedi</button>`
        :`<button class="btn ghost" type="button" data-act="authMode" data-m="signup">Non hai un account? Registrati</button><button class="btn ghost sm" type="button" data-act="forgot">Password dimenticata?</button>`}
   </form>
-  ${S.modal==="join"?`<p class="center small muted" style="font-family:var(--f-ui)">Dopo l'accesso potrai entrare nella lega con il codice d'invito.</p>`:""}
+  ${S.modal==="join"?`<p class="center small muted" style="font-family:var(--f-ui)">Dopo l'accesso potrai entrare nella lega <b>${esc(S.form.name||"")}</b>.</p>`:""}
   <p class="center small muted" style="font-family:var(--f-ui)">Accedendo accetti i <a href="termini.html">Termini</a> e l'<a href="privacy.html">informativa sulla privacy</a>.</p>`;
 }
 function vNewPw(){
@@ -593,17 +612,25 @@ function vNewPw(){
 }
 
 function vJoin(){
-  const f=S.form;
-  const fields=f.useCode
-    ?`<input type="text" id="jf-code" data-bind="form.code" value="${esc(f.code)}" placeholder="Codice invito" autocomplete="off" autocapitalize="characters">`
-    :`<input type="text" id="jf-name" data-bind="form.name" value="${esc(f.name)}" placeholder="Nome lega" autocomplete="off"><input type="password" id="jf-pw" data-bind="form.pw" value="${esc(f.pw)}" placeholder="Password lega (se privata)" autocomplete="off">`;
+  const f=S.form;const link=f.fromLink&&f.name;
+  const pwField=`<input type="password" id="jf-pw" data-bind="form.pw" value="${esc(f.pw)}" placeholder="${link?"Password della lega":"Password (solo per le leghe private)"}" autocomplete="off">`;
+  let head,fields;
+  if(link){
+    head=`<h2 id="jt">Unisciti a “${esc(f.name)}”</h2>`;
+    fields=f.kind==="none"?`<p class="err">Nessuna lega con questo nome: forse è stata rinominata o eliminata.</p>`
+      :f.kind==="public"?`<p class="small" style="font-family:var(--f-ui)">Lega pubblica: scegli il tuo nickname ed entri subito.</p>`
+      :f.kind==="private"?`<p class="small" style="font-family:var(--f-ui)">Lega privata: inserisci la password che ti ha dato l'admin.</p>${pwField}`
+      :pwField;
+  }else{
+    head=`<h2 id="jt">Inserisci nome e password della lega per unirti</h2>`;
+    fields=`<input type="text" id="jf-name" data-bind="form.name" value="${esc(f.name)}" placeholder="Nome lega" autocomplete="off">${pwField}`;
+  }
   return `<div class="scrim" data-act="closeAll"></div><form class="card modal" role="dialog" aria-modal="true" aria-labelledby="jt" data-submit="join" novalidate>
-  <h2 id="jt">${f.useCode?"Inserisci il codice d'invito":"Inserisci nome e password della lega per unirti"}</h2>
-  ${fields}
+  ${head}${fields}
   <input type="text" id="jf-nick" data-bind="form.nick" value="${esc(f.nick)}" placeholder="Il tuo nickname" maxlength="20">
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
   <button class="btn block" type="submit" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Unisciti"}</button>
-  <button class="btn ghost" type="button" data-act="toggleCode">${f.useCode?"Uso nome e password":"Ho un codice d'invito"}</button></form>`;
+  ${link?`<button class="btn ghost" type="button" data-act="editName">È un'altra lega?</button>`:""}</form>`;
 }
 function logoHtml(L){return `<div class="logo">${L.logo?`<img src="${esc(L.logo)}" alt="">`:esc((L.name||"?").trim()[0]?.toUpperCase())}</div>`}
 
@@ -657,10 +684,9 @@ function vHome(L){
   return html;
 }
 function statusCard(L,r){
-  const panelBtn=S.siteAdmin?`<button class="btn wide sec" data-act="openPanel" data-n="${r?r.n:L.startRound}">Pannello amministratore</button>`:"";
-  if(!r){return `<p class="cta-title">La competizione non è ancora iniziata</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">Si parte dalla ${L.startRound}ª giornata</p>${panelBtn}`}
+  if(!r){return `<p class="cta-title">La competizione non è ancora iniziata</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">Si parte dalla ${L.startRound}ª giornata</p>`}
   if(!roundVisible(r)){const k=firstKick(r);
-    return `<p class="cta-title">${S.rounds[0]===r&&!S.rounds.some(x=>x.matches.some(m=>esito(m)))?"La competizione non è ancora iniziata":`Quote della ${r.n}ª giornata in arrivo`}</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">${k?`Si gioca da ${fmtDow(k)} · le quote arrivano prima della giornata`:"Le quote arrivano prima della giornata"}</p>${panelBtn}`}
+    return `<p class="cta-title">${S.rounds[0]===r&&!S.rounds.some(x=>x.matches.some(m=>esito(m)))?"La competizione non è ancora iniziata":`Quote della ${r.n}ª giornata in arrivo`}</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">${k?`Si gioca da ${fmtDow(k)} · le quote arrivano prima della giornata`:"Le quote arrivano prima della giornata"}</p>`}
   const open=r.matches.filter(m=>!matchLocked(r,m));
   if(!open.length){
     if(roundDone(r))return `<p class="cta-title">${r.n}ª giornata conclusa</p><p class="count">Hai fatto <b>${f2(roundScore(r,S.uid).pts)}</b> punti</p><button class="btn wide" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
@@ -679,7 +705,7 @@ function vPicks(L){
   const vis=roundVisible(r);const st=roundStatus(r,L);
   let html=`<div class="row"><h2 class="grow">${r.n}° Giornata</h2><span class="chip ${st.c}">${st.t}</span></div>`;
   if(list.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${list.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
-  if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p>${S.siteAdmin?`<button class="btn wide sec" data-act="openPanel" data-n="${r.n}">Pannello amministratore</button>`:""}</section>`}
+  if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
   const mine=pickDoc(r._id,S.uid)?.picks||{};const sc=roundScore(r,S.uid);let potential=0;
   html+=r.matches.map(m=>{
     const locked=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
@@ -725,13 +751,13 @@ function vStandings(L){
 
 /* ---- Lega: regolamento, invito, partecipanti ---- */
 function vInfo(L){
-  const admin=isAdmin();const pend=S.members.filter(m=>m.status==="pending");const code=B.inviteCode(L);
+  const admin=isAdmin();const pend=S.members.filter(m=>m.status==="pending");
   return `<div class="row">${logoHtml(L)}<div class="grow"><h2>${esc(L.name)}</h2><div class="small muted">${L.type==="private"?"Privata":"Pubblica"} · Modalità Quote</div></div>${admin?`<button class="btn sm" data-act="go" data-s="admin">Admin</button>`:""}</div>
   ${admin&&pend.length?`<section class="card"><h3>Richieste di accesso</h3><div class="list">${pend.map(m=>`<div class="row"><span class="grow"><b>${esc(m.nick)}</b></span><button class="btn sm" data-act="approve" data-u="${m._id}">Approva</button><button class="btn sm sec" data-act="reject" data-u="${m._id}">Rifiuta</button></div>`).join("")}</div></section>`:""}
-  <section class="card"><h3>Invita alla tua lega</h3><p class="small" style="font-family:var(--f-ui)">Manda il link o il codice: chi lo usa entra senza password${L.type==="private"?" (le richieste vanno comunque approvate dall'admin)":""}.</p>
-   ${code?`<div class="row"><span class="code">${esc(code)}</span><button class="btn sm" data-act="copyLink" data-code="${esc(code)}">Copia link</button><button class="btn sm sec" data-act="copyCode" data-code="${esc(code)}">Copia codice</button></div>`:`<p class="small muted">Codice in caricamento…</p>`}</section>
+  <section class="card"><h3>Invita alla tua lega</h3><p class="small" style="font-family:var(--f-ui)">${L.type==="private"?"Manda il link insieme alla password della lega: chi lo apre trova il nome già inserito e deve solo scrivere la password. In alternativa può usare “Unisciti a una lega” con nome e password.":"Manda il link: chi lo apre trova il nome già inserito ed entra subito. In alternativa può usare “Unisciti a una lega” con il nome."}</p>
+   <div class="row"><span class="code">${esc(L.name)}</span><button class="btn sm" data-act="copyLink">Copia link</button></div></section>
   <section class="card"><h3>Regolamento lega</h3><table class="kv"><tbody>
-   <tr><td>Accesso</td><td>${L.type==="private"?"Privata, con approvazione":"Pubblica"}</td></tr>
+   <tr><td>Accesso</td><td>${L.type==="private"?"Privata, con nome e password":"Pubblica"}</td></tr>
    <tr><td>Modalità</td><td>Quote</td></tr>
    <tr><td>Spareggio</td><td>${TB_LABEL[L.tiebreak]}</td></tr>
    <tr><td>Durata</td><td>Dalla ${L.startRound}ª alla 38ª giornata</td></tr>
@@ -756,7 +782,7 @@ function vCalendar(){
     const when=f.kickoff?`${fmtDow(f.kickoff)} · ${fmtTime(f.kickoff)}`:`<span class="muted">Orario da definire · indicativa ${f.day?fmtDow(f.day):"—"}</span>`;
     return `<div class="cal-m"><div class="t">${crest(f.home)}<span>${esc(f.home)}</span><span class="muted">–</span><span>${esc(f.away)}</span>${crest(f.away)}</div><div class="w">${res||when}</div></div>`}).join("")}</div>
    <p class="small muted" style="font-family:var(--f-ui)">Gli accoppiamenti sono quelli ufficiali; date e orari sono provvisori e vengono aggiornati man mano.</p>
-   ${S.siteAdmin?`<button class="btn sm sec" data-act="openPanel" data-n="${n}" style="align-self:flex-start">Modifica nel pannello amministratore</button>`:""}</section>`;
+</section>`;
   return html;
 }
 

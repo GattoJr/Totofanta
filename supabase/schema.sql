@@ -1,6 +1,6 @@
 -- =====================================================================
 -- TOTOFANTA · schema del database (Supabase / Postgres)
--- Versione 4 · modalità Quote · giornate, quote e risultati unici
+-- Versione 5 · modalità Quote · giornate, quote e risultati unici
 --
 -- Come usarlo: Supabase › SQL Editor › New query › incolla tutto › Run.
 -- Le tabelle esistono già? Prima esegui reset.sql.
@@ -347,28 +347,24 @@ begin
   return lid;
 end $$;
 
--- Entra in una lega con nome (+ password se privata) oppure con il codice d'invito.
+-- Entra in una lega con il nome (+ password se privata). Il link d'invito
+-- precompila solo il nome: per le leghe private la password serve sempre.
+-- p_code resta nella firma per compatibilità ma viene ignorato.
 create or replace function public.join_league(
   p_name text, p_password text, p_code text, p_nickname text
 ) returns jsonb
 language plpgsql security definer set search_path = '' as $$
-declare v_league public.leagues; v_sec public.league_secrets; v_status text; v_existing public.members;
+declare v_league public.leagues; v_sec public.league_secrets; v_existing public.members;
 begin
   if auth.uid() is null then raise exception 'Devi accedere per unirti a una lega'; end if;
-  if coalesce(btrim(p_code), '') <> '' then
-    select * into v_sec from public.league_secrets s where s.invite_code = upper(btrim(p_code));
-    if not found then raise exception 'Codice invito non valido'; end if;
-    select * into v_league from public.leagues l where l.id = v_sec.league_id;
-  else
-    select * into v_league from public.leagues l where l.name_key = lower(btrim(coalesce(p_name, '')));
-    if not found then raise exception 'Nessuna lega con questo nome'; end if;
-    select * into v_sec from public.league_secrets s where s.league_id = v_league.id;
-  end if;
+  select * into v_league from public.leagues l where l.name_key = lower(btrim(coalesce(p_name, '')));
+  if not found then raise exception 'Nessuna lega con questo nome'; end if;
+  select * into v_sec from public.league_secrets s where s.league_id = v_league.id;
 
   select * into v_existing from public.members m where m.league_id = v_league.id and m.user_id = auth.uid();
   if found then return jsonb_build_object('league_id', v_league.id, 'status', v_existing.status); end if;
 
-  if coalesce(btrim(p_code), '') = '' and v_league.type = 'private'
+  if v_league.type = 'private'
      and (v_sec.password_hash is null or extensions.crypt(coalesce(p_password, ''), v_sec.password_hash) <> v_sec.password_hash) then
     raise exception 'Password errata';
   end if;
@@ -377,10 +373,16 @@ begin
     raise exception 'Nickname già usato in questa lega';
   end if;
 
-  v_status := case when v_league.type = 'public' then 'approved' else 'pending' end;
-  insert into public.members (league_id, user_id, nickname, status) values (v_league.id, auth.uid(), btrim(p_nickname), v_status);
-  return jsonb_build_object('league_id', v_league.id, 'status', v_status);
+  insert into public.members (league_id, user_id, nickname, status) values (v_league.id, auth.uid(), btrim(p_nickname), 'approved');
+  return jsonb_build_object('league_id', v_league.id, 'status', 'approved');
 end $$;
+
+-- Tipo di una lega dato il nome ('private' / 'public' / null): serve alla
+-- schermata del link d'invito per chiedere la password solo se serve.
+create or replace function public.league_join_info(p_name text) returns text
+language sql stable security definer set search_path = '' as $$
+  select l.type from public.leagues l where l.name_key = lower(btrim(coalesce(p_name, '')));
+$$;
 
 -- Codice d'invito: lo leggono solo gli iscritti approvati.
 create or replace function public.get_invite_code(p_league uuid) returns text
@@ -393,9 +395,11 @@ $$;
 revoke execute on function public.create_league(text, text, text, text, int, text, text) from public, anon;
 revoke execute on function public.join_league(text, text, text, text) from public, anon;
 revoke execute on function public.get_invite_code(uuid) from public, anon;
+revoke execute on function public.league_join_info(text) from public, anon;
 grant  execute on function public.create_league(text, text, text, text, int, text, text) to authenticated;
 grant  execute on function public.join_league(text, text, text, text) to authenticated;
 grant  execute on function public.get_invite_code(uuid) to authenticated;
+grant  execute on function public.league_join_info(text) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- Aggiornamenti in tempo reale (il sito si aggiorna quando un altro gioca)
