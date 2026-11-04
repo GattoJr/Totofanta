@@ -701,10 +701,20 @@ function statusCard(L,r){
     if(roundDone(r))return `<p class="cta-title">${r.n}ª giornata conclusa</p><p class="count">Hai fatto <b>${f2(roundScore(r,S.uid).pts)}</b> punti</p><button class="btn wide" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
     return `<p class="cta-title">${r.n}ª giornata in corso</p><button class="btn wide" data-act="go" data-s="pronostici">Segui i tuoi pronostici</button>`}
   const pk=pickDoc(r._id,S.uid)?.picks||{};const missing=open.filter(m=>!pk[m.id]);
-  const next=Math.min(...(missing.length?missing:open).map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x)));
-  if(missing.length)return `<p class="cta-title">${isFinite(next)?`Hai ancora ${countdown(next-Date.now())} per inserire i tuoi pronostici`:"Inserisci i tuoi pronostici"}</p><p class="count small muted">${missing.length} partit${missing.length===1?"a":"e"} senza pronostico</p><button class="btn wide" data-act="go" data-s="pronostici">Inserisci i tuoi pronostici</button>`;
-  return `<p class="cta-title">Hai già inserito i tuoi pronostici per la ${r.n}ª giornata</p><button class="btn wide" data-act="go" data-s="pronostici">Modifica i tuoi pronostici</button>`;
+  if(missing.length)return `<p class="cta-title">Inserisci i tuoi pronostici per la ${r.n}ª giornata</p><p class="count small muted">${missing.length} partit${missing.length===1?"a":"e"} senza pronostico</p><button class="btn wide" data-act="go" data-s="pronostici">Inserisci i tuoi pronostici</button>${kickTimer(r)}`;
+  return `<p class="cta-title">Hai già inserito i tuoi pronostici per la ${r.n}ª giornata</p><button class="btn wide" data-act="go" data-s="pronostici">Modifica i tuoi pronostici</button>${kickTimer(r)}`;
 }
+
+/* timer fino al fischio d'inizio della prima partita della giornata
+   (se è già iniziata: fino al prossimo calcio d'inizio ancora da giocare) */
+function kickTimer(r){
+  const now=Date.now();const ks=r.matches.map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x)).sort((a,b)=>a-b);if(!ks.length)return "";
+  const first=ks[0]>now;const t=first?ks[0]:ks.find(x=>x>now);if(!t)return "";
+  return `<div class="timer"><span class="lbl">${first?"Al fischio d'inizio della prima partita":"Al prossimo calcio d'inizio"}</span><span class="clock" data-deadline="${t}">${clockText(t-now)}</span><span class="small muted">${fmtDow(t)} · ${fmtTime(t)}</span></div>`;
+}
+function clockText(ms){if(ms<=0)return "00:00:00";const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;return (d?`${d}g `:"")+`${pad(h)}:${pad(m)}:${pad(x)}`}
+/* aggiorna i timer ogni secondo senza ridisegnare la pagina; a scadenza ridisegna (blocco pronostici) */
+setInterval(()=>{const now=Date.now();let expired=false;document.querySelectorAll("[data-deadline]").forEach(el=>{const ms=+el.dataset.deadline-now;el.textContent=clockText(ms);if(ms<=0)expired=true});if(expired)render()},1000);
 
 /* ---- Pronostici (3.1) ---- */
 function vPicks(L){
@@ -743,7 +753,13 @@ function vStandings(L){
   const rows=computeStandings(L,S.members,S.rounds,S.picks);
   const scored=S.rounds.filter(r=>r.matches.some(m=>esito(m)));
   let html=`<h2 class="pagetitle">Classifica</h2>`;
-  if(!scored.length)return html+`<section class="card"><h3>${esc(L.name)}</h3><div class="empty">La classifica si accende con i primi risultati.</div></section>`;
+  /* senza risultati: tutti i partecipanti a 0 punti, in ordine d'iscrizione */
+  if(!scored.length){
+    const list=approved().sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0));
+    return html+`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n">Esiti</th></tr></thead><tbody>
+    ${list.map(m=>`<tr class="${m._id===S.uid?"me":""}"><td class="pos">–</td><td class="nm">${esc(m.nick)}${m.bot?` <span class="chip">prova</span>`:""}</td><td class="n"><b>0.00</b></td><td class="n">0</td></tr>`).join("")}
+    </tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">I punti arrivano con i primi risultati, dalla ${L.startRound}ª giornata.</p></section>`;
+  }
   html+=`<div class="rounds" role="group" aria-label="Tipo di classifica"><button class="rchip" aria-pressed="${S.rankView==="gen"}" data-act="rank" data-v="gen">Generale</button>${scored.map(r=>`<button class="rchip" aria-pressed="${S.rankView==="g"+r.n}" data-act="rank" data-v="g${r.n}">${r.n}ª giornata</button>`).join("")}</div>`;
   if(S.rankView==="gen"){
     html+=`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n">Esiti</th></tr></thead><tbody>
