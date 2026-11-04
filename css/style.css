@@ -65,6 +65,8 @@ p{margin:0}
 /* fields & options as in "Crea una lega" */
 .q{font-weight:600;font-size:16px;display:flex;align-items:center;gap:8px}
 .q .help{margin-left:auto}
+.tiebox{background:var(--field);border-radius:var(--r);padding:10px 12px;font-family:var(--f-ui);font-size:13px;line-height:1.45;display:flex;flex-direction:column;gap:6px}
+.tiebox p{margin:0}
 .thhelp{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
 .help{width:26px;height:26px;border-radius:50%;border:2px solid var(--ink);background:none;font-weight:700;font-size:14px;line-height:1;display:grid;place-items:center;cursor:pointer;padding:0;color:var(--ink);flex:none}
 input[type=text],input[type=email],input[type=password],input[type=number],input[type=datetime-local],select{background:var(--field);border:1px solid transparent;border-radius:6px;padding:11px 14px;width:100%;min-width:0;font-weight:600;font-size:16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -84,11 +86,11 @@ input:focus,select:focus{outline:none;border-color:var(--blue)}
 .tip{background:var(--blue-soft);border-radius:6px;padding:10px 12px;font-size:14px}
 .banner{border-radius:var(--r);padding:10px 14px;font-size:13px;background:var(--warn-soft)}
 /* dashboard */
-.stats{display:grid;grid-template-columns:repeat(3,1fr);text-align:center}
-.stats>div{display:flex;flex-direction:column;gap:2px;padding:4px 0}
-.stats>div+div{border-left:1.5px solid var(--ink)}
-.stats b{font-size:20px;font-family:var(--f-title);font-variant-numeric:tabular-nums}
-.stats span{font-size:13px;font-family:var(--f-ui)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;align-items:stretch}
+.stats>div{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:2px 6px}
+.stats>div+div{border-left:1.5px solid var(--line)}
+.stats b{font-size:22px;line-height:1.1;font-family:var(--f-title);font-variant-numeric:tabular-nums}
+.stats span{font-size:12px;line-height:1.25;font-family:var(--f-ui);color:var(--muted);text-wrap:balance}
 .cta-title{font-weight:600;font-size:17px;text-align:center;text-wrap:balance}
 .count{font-family:var(--f-ui);font-size:15px;text-align:center}
 .timer{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:2px;font-family:var(--f-ui);text-align:center}
@@ -233,3 +235,10 @@ tr.me td{background:var(--blue-soft)}
 .sep{display:flex;align-items:center;gap:10px;color:var(--muted);font-family:var(--f-ui);font-size:13px}
 .sep::before,.sep::after{content:"";flex:1;border-top:1px solid var(--line)}
 .gsi{display:flex;justify-content:center;min-height:44px}
+
+/* pronostici: barra Salva e conferma temporanea */
+.savebar{position:sticky;bottom:calc(var(--nav-h) + 10px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border-radius:var(--r);box-shadow:0 4px 14px rgba(0,0,0,.22);padding:10px 12px;font-family:var(--f-ui)}
+.savebar .btn{min-width:120px}
+.flash{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);z-index:60;background:var(--win);color:#fff;font-family:var(--f-ui);font-weight:600;font-size:16px;padding:16px 22px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);text-align:center;max-width:min(320px,86vw);animation:flashin .18s ease-out}
+@keyframes flashin{from{opacity:0;transform:translate(-50%,-44%)}to{opacity:1;transform:translate(-50%,-50%)}}
+@media (prefers-reduced-motion:reduce){.flash{animation:none}}

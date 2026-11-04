@@ -11,11 +11,12 @@ const RATING={Inter:88,Napoli:86,Milan:84,Juventus:84,Atalanta:83,Roma:82,Como:8
 /* colori sociali per i badge (non sono loghi ufficiali) */
 const COLORS={Atalanta:["#1e71b8","#111"],Bologna:["#a21c26","#1a2f48"],Cagliari:["#a8102c","#002350"],Como:["#1c3f94","#e8eef8"],Fiorentina:["#5b2b82","#e9dff2"],Frosinone:["#ffd400","#0055a4"],Genoa:["#c8102e","#002a5c"],Inter:["#0068a8","#111"],Juventus:["#111","#f2f2f2"],Lazio:["#87d0f0","#0b2240"],Lecce:["#f7d117","#d71920"],Milan:["#d0101b","#111"],Monza:["#e2001a","#f5f5f5"],Napoli:["#12a0d7","#0b3b6e"],Parma:["#ffd200","#1b4b9a"],Roma:["#8e1f2f","#f0bc42"],Sassuolo:["#00a752","#111"],Torino:["#8a1e03","#f2e6dc"],Udinese:["#f2f2f2","#111"],Venezia:["#f26522","#0f5132"]};
 const BOT_NAMES=["Zona Cesarini","Catenaccio","Bomber86","Il Mister","Tiki Taka","Panchinaro","Fuorigioco","Cucchiaio","Var Checking","Contropiede"];
-const TB_LABEL={best_day:"Miglior punteggio di giornata",highest_odd:"Quota più alta"};
+const TB_TEXT="Miglior punteggio di giornata (MP), poi Miglior quota (MQ)";
 const HELP={
   access:"Privata: si entra con il nome della lega e la password che scegli qui. Il link d'invito apre già la schermata con il nome della lega: basta scrivere la password.\nPubblica: chiunque può entrare con il nome della lega o con il link d'invito, senza password.",
-  mp:"Miglior punteggio: miglior punteggio ottenuto con una singola quota",
-  tie:"Se due giocatori finiscono a pari punti, vince chi ha il punteggio di giornata più alto (o la quota indovinata più alta). Se c'è ancora parità si confronta il secondo valore, e così via.",
+  mp:"Miglior punteggio: il punteggio più alto ottenuto in una singola giornata.",
+  mq:"Miglior quota: la quota più alta indovinata con un singolo pronostico.",
+  tie:"A pari punti si guarda il Miglior punteggio di giornata (MP): è più in alto chi ha fatto più punti in una singola giornata.\nSe anche l'MP è uguale si guarda la Miglior quota (MQ): è più in alto chi ha indovinato la quota più alta.\nSe MP e MQ sono uguali i giocatori condividono la stessa posizione (es. due secondi posti) e le posizioni successive scalano (il giocatore dopo è quarto).",
 };
 
 /* ===================== Configurazione ===================== */
@@ -65,7 +66,7 @@ const S={
   screen:"home",drawer:false,modal:null,help:null,
   roundSel:null,rankView:"gen",
   form:{},formErr:"",authForm:{mode:"login",email:"",pw:"",pw2:""},authMsg:"",busy:false,
-  confirm:null,showOthers:false,
+  confirm:null,showOthers:false,draft:{},leave:null,flash:"",
   localUsers:[],
   fixtures:[],odds:{},calRounds:{},siteAdmin:false,calN:null,admN:null,admEdit:null,
 };
@@ -307,11 +308,21 @@ function pickDefaultLeague(){
   if(lid!==S.lid)selectLeague(lid);
 }
 function selectLeague(lid){
-  S.lid=lid;S.roundSel=null;S.members=[];S.rounds=[];S.picks=[];S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
+  S.lid=lid;S.roundSel=null;S.draft={};S.members=[];S.rounds=[];S.picks=[];S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
   if(lid)lsSet("totofanta-last-lid:"+S.uid,lid);
   B.openLeague(lid);render();
 }
-function go(screen){S.screen=screen;S.drawer=false;S.modal=null;S.help=null;S.confirm=null;S.formErr="";render();window.scrollTo(0,0)}
+/* pronostici non salvati: bozza per giornata, confrontata con quanto salvato (solo partite non ancora iniziate) */
+function savedPicks(rId){return pickDoc(rId,S.uid)?.picks||{}}
+function draftPicks(r){return S.draft[r._id]||savedPicks(r._id)}
+function pickChanges(r){const d=S.draft[r._id];if(!d)return[];const sv=savedPicks(r._id);
+  return r.matches.filter(m=>!matchLocked(r,m)&&(d[m.id]||null)!==(sv[m.id]||null)).map(m=>({m,p:d[m.id]||null}))}
+function picksDirty(){return S.rounds.some(r=>pickChanges(r).length>0)}
+/* chiede conferma se si lascia la pagina pronostici con modifiche non salvate */
+function guard(next){if(S.screen==="pronostici"&&picksDirty()){S.leave={next};S.drawer=false;render();return true}return false}
+window.addEventListener("beforeunload",e=>{if(S.screen==="pronostici"&&picksDirty()){e.preventDefault();e.returnValue=""}});
+let flashT;function flash(msg){S.flash=msg;render();clearTimeout(flashT);flashT=setTimeout(()=>{S.flash="";render()},2200)}
+function go(screen){if(screen!=="pronostici"&&guard(()=>go(screen)))return;if(screen!=="pronostici")S.draft={};S.screen=screen;S.drawer=false;S.modal=null;S.help=null;S.confirm=null;S.formErr="";render();window.scrollTo(0,0)}
 /* link d'invito: #lega=<nome della lega> apre la schermata d'iscrizione con il nome già inserito */
 function handleHash(){
   if(ADMIN_PAGE)return;
@@ -371,22 +382,26 @@ function nextCalendarRound(){const now=Date.now();for(let n=1;n<=38;n++){const f
 function currentRound(){const list=S.rounds;if(!list.length)return null;return list.find(r=>!roundDone(r)&&(r.published||r.matches.some(m=>!matchLocked(r,m))))||list[list.length-1]}
 
 /* ===================== Punteggi e classifica ===================== */
+/* Classifica generale.
+   - nessun risultato: tutti a 0, posizioni in ordine alfabetico
+   - poi: punti, a pari punti MP (miglior punteggio di giornata), poi MQ (miglior quota);
+     con punti, MP e MQ uguali la posizione è la stessa e le successive scalano (1, 2, 2, 4) */
 function computeStandings(L,members,rounds,picks){
   const byId={};for(const p of picks)byId[p._id]=p;
-  const rows=members.filter(m=>m.status==="approved").map(m=>({uid:m._id,nick:m.nick,bot:!!m.bot,total:0,correct:0,played:0,perRound:{},wonOdds:[]}));
+  const rows=members.filter(m=>m.status==="approved").map(m=>({uid:m._id,nick:m.nick,bot:!!m.bot,total:0,correct:0,played:0,perRound:{},mp:0,mq:0}));
+  let anyScored=false;
   for(const r of rounds){
-    const scored=r.matches.filter(m=>esito(m));if(!scored.length)continue;
+    const scored=r.matches.filter(m=>esito(m));if(!scored.length)continue;anyScored=true;
     for(const row of rows){
       const pk=byId[`g${r.n}~${row.uid}`]?.picks||{};let pts=0,any=false;
-      for(const m of scored){const p=pk[m.id];if(p)any=true;if(p&&p===esito(m)){const c=cents(oddOf(m,p));pts+=c;row.correct++;row.wonOdds.push(c)}}
-      row.perRound[r.n]=pts;row.total+=pts;if(any)row.played++;
+      for(const m of scored){const p=pk[m.id];if(p)any=true;if(p&&p===esito(m)){const c=cents(oddOf(m,p));pts+=c;row.correct++;if(c>row.mq)row.mq=c}}
+      row.perRound[r.n]=pts;row.total+=pts;if(pts>row.mp)row.mp=pts;if(any)row.played++;
     }
   }
-  for(const row of rows){row.days=Object.values(row.perRound).sort((a,b)=>b-a);row.wonOdds.sort((a,b)=>b-a)}
-  const tbKey=L.tiebreak==="highest_odd"?"wonOdds":"days";
-  const cmpArr=(a,b)=>{for(let i=0;i<Math.max(a.length,b.length);i++){const x=a[i]??-1,y=b[i]??-1;if(x!==y)return y-x}return 0};
-  rows.sort((a,b)=>(b.total-a.total)||cmpArr(a[tbKey],b[tbKey])||a.nick.localeCompare(b.nick));
-  rows.forEach((r,i)=>{const p=rows[i-1];r.pos=(p&&p.total===r.total&&cmpArr(p[tbKey],r[tbKey])===0)?p.pos:i+1;r.tbVal=r[tbKey][0]??null;r.tiedOnPoints=rows.some(o=>o!==r&&o.total===r.total)});
+  const alpha=(a,b)=>a.nick.localeCompare(b.nick,"it",{sensitivity:"base"});
+  if(!anyScored){rows.sort(alpha);rows.forEach((r,i)=>r.pos=i+1);return rows}
+  rows.sort((a,b)=>(b.total-a.total)||(b.mp-a.mp)||(b.mq-a.mq)||alpha(a,b));
+  rows.forEach((r,i)=>{const p=rows[i-1];r.pos=(p&&p.total===r.total&&p.mp===r.mp&&p.mq===r.mq)?p.pos:i+1});
   return rows;
 }
 function roundScore(r,uid){const pk=pickDoc(`g${r.n}`,uid)?.picks||{};let pts=0,ok=0,count=0,best=0;for(const m of r.matches){const p=pk[m.id];if(p)count++;const e=esito(m);if(e&&p===e){const c=cents(oddOf(m,p));pts+=c;ok++;if(c>best)best=c}}return{pts,ok,count,best}}
@@ -398,7 +413,6 @@ function sampleScore(e){const r=n=>Math.floor(Math.random()*n);if(e==="X"){const
 /* ===================== Azioni ===================== */
 async function safe(fn){try{S.busy=true;await fn();return true}catch(e){console.warn(e);toast(itMsg(e));return false}finally{S.busy=false;render()}}
 function err(m){S.formErr=m;render()}
-let pickChain=Promise.resolve();
 
 const ACT={
   go:d=>go(d.s),
@@ -407,7 +421,7 @@ const ACT={
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
   newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?nextCalendarRound():1),nick:"",logo:null};go("create")},
   joinModal:()=>{S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="";S.modal="join";S.drawer=false;render()},
-  pickLeague:d=>{selectLeague(d.lid);go("home")},
+  pickLeague:d=>{if(guard(()=>ACT.pickLeague(d)))return;selectLeague(d.lid);go("home")},
   async create(){
     const f=S.form;const name=(f.name||"").trim();const nick=(f.nick||"").trim();
     if(name.length<3)return err("Inserisci un nome di almeno 3 caratteri per la lega");
@@ -433,11 +447,23 @@ const ACT={
   pick:d=>{
     const r=S.rounds.find(x=>x._id===d.r);if(!r)return;const m=r.matches.find(x=>x.id===d.m);
     if(!m||matchLocked(r,m))return toast("Partita già iniziata: pronostico bloccato");
-    const cur={...(pickDoc(d.r,S.uid)?.picks||{})};const newP=cur[m.id]===d.p?null:d.p;if(newP)cur[m.id]=newP;else delete cur[m.id];
-    const id=`${d.r}~${S.uid}`;const i=S.picks.findIndex(p=>p._id===id);const doc={uid:S.uid,round:d.r,picks:cur,_id:id};if(i>=0)S.picks[i]=doc;else S.picks.push(doc);
-    render();
-    pickChain=pickChain.then(()=>B.setPick(r,m,newP)).then(()=>toast(newP?"Pronostico salvato":"Pronostico tolto")).catch(e=>{toast(itMsg(e).includes("row-level")?"Pronostico non salvato: la partita è già iniziata o le quote non sono pubblicate":itMsg(e));ONLINE&&Online.refresh()});
+    const cur={...draftPicks(r)};if(cur[m.id]===d.p)delete cur[m.id];else cur[m.id]=d.p;
+    S.draft[r._id]=cur;render();
   },
+  async savePicks(d){
+    const r=S.rounds.find(x=>x._id===(d.r||S.leave?.r));if(!r)return;const ch=pickChanges(r);
+    if(!ch.length){delete S.draft[r._id];flash("Pronostici salvati correttamente");return true}
+    S.busy=true;render();
+    try{
+      for(const c of ch)await B.setPick(r,c.m,c.p);
+      const doc={uid:S.uid,round:r._id,picks:{...S.draft[r._id]},_id:`${r._id}~${S.uid}`};const i=S.picks.findIndex(p=>p._id===doc._id);if(i>=0)S.picks[i]=doc;else S.picks.push(doc);
+      delete S.draft[r._id];S.busy=false;flash("Pronostici salvati correttamente");return true;
+    }catch(e){S.busy=false;toast(itMsg(e).includes("row-level")?"Pronostici non salvati: una partita è già iniziata o le quote non sono pubblicate":itMsg(e));ONLINE&&Online.refresh();render();return false}
+  },
+  leaveSave:async()=>{const next=S.leave?.next;const rs=S.rounds.filter(r=>pickChanges(r).length);S.leave=null;
+    for(const r of rs){if(!await ACT.savePicks({r:r._id}))return}S.draft={};next&&next()},
+  leaveDiscard:()=>{const next=S.leave?.next;S.leave=null;S.draft={};next&&next()},
+  leaveStay:()=>{S.leave=null;render()},
   copyLink:async()=>{const L=league();if(!L)return;const url=inviteUrl(L);try{await navigator.clipboard.writeText(url);toast("Link d'invito copiato")}catch{prompt("Copia il link d'invito:",url)}},
   // ---- admin
   approve:d=>safe(async()=>{await B.approve(S.members.find(x=>x._id===d.u));toast("Giocatore approvato")}),
@@ -504,7 +530,7 @@ const ACT={
     S.busy=true;render();try{await Online.updatePw(f.pw);S.formErr="";S.authForm.pw=S.authForm.pw2="";toast("Password aggiornata");go("home")}catch(e){S.formErr=itMsg(e)}finally{S.busy=false;render()}
   },
   google:async()=>{S.formErr="";S.busy=true;render();try{await Online.signInGoogle()}catch(e){S.formErr=itMsg(e);S.busy=false;render()}},
-  logout:async()=>{S.drawer=false;await Online.signOut();S.screen="home";render()},
+  logout:async()=>{if(guard(()=>ACT.logout()))return;S.drawer=false;await Online.signOut();S.screen="home";render()},
 };
 function switchLocal(id){S.uid=id;saveLocalUsers();selectLeague(null);Local.subscribeMe();toast("Ora giochi come "+(S.localUsers.find(u=>u.id===id)?.name||""));render()}
 
@@ -553,7 +579,7 @@ function render(){
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
   app.innerHTML=`<header class="top"><div class="col">${leftBtn}<h1>${title}</h1><span></span></div></header>
-  <main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${S.help?vHelp():""}`;
+  <main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
   if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
 }
@@ -575,8 +601,8 @@ function banners(){
 }
 function vNav(){
   const L=league();const pend=isAdmin()?S.members.filter(m=>m.status==="pending").length:0;
-  const items=[["home","Home",I.home],["pronostici","Pronostici",I.slip],["classifica","Classifica",I.rank],["lega","Lega",I.league]];
-  const cur=S.screen==="admin"?"lega":S.screen;
+  const items=[["home","Home",I.home],["classifica","Classifica",I.rank],["lega","Lega",I.league]];
+  const cur=S.screen==="admin"?"lega":S.screen==="pronostici"?"home":S.screen;
   return `<nav class="nav" aria-label="Sezioni"><div class="col">${items.map(([k,t,ic])=>`<button data-act="go" data-s="${k}" ${cur===k?'aria-current="page"':""} ${!L&&k!=="home"?"disabled":""}>${ic}<span>${t}</span>${k==="lega"&&pend?`<span class="dot">${pend}</span>`:""}</button>`).join("")}</div></nav>`;
 }
 function vDrawer(){
@@ -594,6 +620,8 @@ function vDrawer(){
    ${admin?`<div class="grp">Opzioni admin</div><button class="dl" data-act="go" data-s="admin">Gestione lega</button>${pend?`<button class="dl" data-act="go" data-s="lega">Richieste di accesso (${pend})</button>`:""}<button class="dl danger" data-act="delLeague">Elimina lega</button>`:""}
   </nav></aside>`;
 }
+function vLeave(){return `<div class="scrim" data-act="leaveStay"></div><div class="card modal" role="alertdialog" aria-modal="true" aria-labelledby="lvt"><h2 id="lvt">Pronostici non salvati</h2><p class="small" style="font-family:var(--f-ui)">Hai modificato dei pronostici senza salvarli. Se esci ora le modifiche vanno perse.</p>
+  <button class="btn block" data-act="leaveSave" ${S.busy?"disabled":""}>Salva ed esci</button><button class="btn block sec" data-act="leaveDiscard">Esci senza salvare</button><button class="btn ghost" data-act="leaveStay">Resta qui</button></div>`}
 function vHelp(){return `<div class="scrim" data-act="closeAll"></div><div class="card modal" role="dialog" aria-modal="true"><p style="white-space:pre-line">${esc(HELP[S.help])}</p><button class="btn sm" data-act="closeAll" style="align-self:flex-end">Ho capito</button></div>`}
 
 /* ---- Login (1) ---- */
@@ -683,7 +711,8 @@ function vHome(L){
   const anyScored=S.rounds.some(r=>r.matches.some(m=>esito(m)));
   const r=currentRound();
   let html=leagueSelect();
-  if(anyScored)html+=`<section class="card"><div class="stats"><div><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></div><div><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></div><div><b>${mine?mine.played:0}</b><span>Giornate</span></div></div><button class="btn block" data-act="go" data-s="classifica">Classifica</button></section>`;
+  /* riepilogo classifica (2.2): sempre visibile, anche prima dei risultati */
+  html+=`<section class="card"><div class="stats"><div><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></div><div><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></div><div><b>${mine&&mine.mp?f2(mine.mp):"0.00"}</b><span>Miglior punteggio</span></div></div><button class="btn wide" data-act="go" data-s="classifica">Classifica</button></section>`;
   html+=`<section class="card">${statusCard(L,r)}</section>`;
   /* le partite si vedono sempre (gli accoppiamenti sono fissi), anche prima che le quote siano pubblicate */
   if(r&&r.matches.length){
@@ -727,7 +756,7 @@ function vPicks(L){
   let html=`<div class="row"><h2 class="grow">${r.n}° Giornata</h2><span class="chip ${st.c}">${st.t}</span></div>`;
   if(list.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${list.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
   if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
-  const mine=pickDoc(r._id,S.uid)?.picks||{};const sc=roundScore(r,S.uid);let potential=0;
+  const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=r.matches.some(m=>!matchLocked(r,m));
   html+=r.matches.map(m=>{
     const locked=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
@@ -737,7 +766,8 @@ function vPicks(L){
     return `<section class="card match"><div class="date">${fmtFull(m.kickoff)}</div><div class="line">${crest(m.home,1)}<span class="h">${esc(m.home)}</span><span class="vs">${mid}</span><span class="a">${esc(m.away)}</span>${crest(m.away,1)}</div><div class="picks">${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div><div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div></div>
-  <p class="center small muted" style="font-family:var(--f-ui)">Ogni scelta si salva da sola. Puoi cambiarla fino al calcio d'inizio.</p></section>`;
+  <p class="center small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al calcio d'inizio di ogni partita.</p></section>`;
+  if(anyOpen)html+=`<div class="savebar"><span class="small">${dirty?`<b>${dirty}</b> modific${dirty===1?"a":"he"} da salvare`:"Nessuna modifica da salvare"}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":"Salva"}</button></div>`;
   html+=vOthers(r);
   return html;
 }
@@ -755,23 +785,18 @@ function vStandings(L){
   const rows=computeStandings(L,S.members,S.rounds,S.picks);
   const scored=S.rounds.filter(r=>r.matches.some(m=>esito(m)));
   let html=`<h2 class="pagetitle">Classifica</h2>`;
-  /* senza risultati: tutti i partecipanti a 0 punti, in ordine d'iscrizione */
-  if(!scored.length){
-    const list=approved().sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0));
-    return html+`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: miglior punteggio ottenuto con una singola quota" aria-label="MP, miglior punteggio: spiegazione">MP</button></th></tr></thead><tbody>
-    ${list.map(m=>`<tr class="${m._id===S.uid?"me":""}"><td class="pos">–</td><td class="nm">${esc(m.nick)}${m.bot?` <span class="chip">prova</span>`:""}</td><td class="n"><b>0.00</b></td><td class="n">–</td></tr>`).join("")}
-    </tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">I punti arrivano con i primi risultati, dalla ${L.startRound}ª giornata.</p></section>`;
-  }
-  html+=`<div class="rounds" role="group" aria-label="Tipo di classifica"><button class="rchip" aria-pressed="${S.rankView==="gen"}" data-act="rank" data-v="gen">Generale</button>${scored.map(r=>`<button class="rchip" aria-pressed="${S.rankView==="g"+r.n}" data-act="rank" data-v="g${r.n}">${r.n}ª giornata</button>`).join("")}</div>`;
-  if(S.rankView==="gen"){
-    html+=`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: miglior punteggio ottenuto con una singola quota" aria-label="MP, miglior punteggio: spiegazione">MP</button></th></tr></thead><tbody>
-    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos">${r.pos}</td><td class="nm">${esc(r.nick)}${r.bot?` <span class="chip">prova</span>`:""}${r.tiedOnPoints?` <span class="chip warn" title="${TB_LABEL[L.tiebreak]}: ${r.tbVal!=null?f2(r.tbVal):"—"}">spareggio ${r.tbVal!=null?f2(r.tbVal):""}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${r.wonOdds.length?f2(r.wonOdds[0]):"–"}</td></tr>`).join("")}
-    </tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">A pari punti decide: <b>${TB_LABEL[L.tiebreak]}</b>.</p></section>`;
+  if(scored.length)html+=`<div class="rounds" role="group" aria-label="Tipo di classifica"><button class="rchip" aria-pressed="${S.rankView==="gen"}" data-act="rank" data-v="gen">Generale</button>${scored.map(r=>`<button class="rchip" aria-pressed="${S.rankView==="g"+r.n}" data-act="rank" data-v="g${r.n}">${r.n}ª giornata</button>`).join("")}</div>`;
+  const v=(x)=>x?f2(x):"–";
+  if(!scored.length||S.rankView==="gen"){
+    html+=`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
+    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos">${r.pos}</td><td class="nm">${esc(r.nick)}${r.bot?` <span class="chip">prova</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td><td class="n">${v(r.mq)}</td></tr>`).join("")}
+    </tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">${scored.length?`A pari punti decide il <b>Miglior punteggio di giornata (MP)</b>, poi la <b>Miglior quota (MQ)</b>.`:`I punti arrivano con i primi risultati, dalla ${L.startRound}ª giornata. Per ora l'ordine è alfabetico.`}</p></section>`;
   }else{
     const r=S.rounds.find(x=>"g"+x.n===S.rankView);if(!r){S.rankView="gen";return vStandings(L)}
-    const day=approved().map(m=>({m,...roundScore(r,m._id)})).sort((a,b)=>b.pts-a.pts||b.ok-a.ok);
-    html+=`<section class="card"><h3>${r.n}ª giornata</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: miglior punteggio ottenuto con una singola quota" aria-label="MP, miglior punteggio: spiegazione">MP</button></th></tr></thead><tbody>
-    ${day.map((d,i)=>`<tr class="${d.m._id===S.uid?"me":""}"><td class="pos">${i>0&&day[i-1].pts===d.pts?"=":i+1}</td><td class="nm">${esc(d.m.nick)}</td><td class="n"><b>${f2(d.pts)}</b></td><td class="n">${d.best?f2(d.best):"–"}</td></tr>`).join("")}</tbody></table></div></section>`;
+    const day=approved().map(m=>({m,...roundScore(r,m._id)})).sort((a,b)=>(b.pts-a.pts)||(b.best-a.best)||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
+    day.forEach((d,i)=>{const p=day[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
+    html+=`<section class="card"><h3>${r.n}ª giornata</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
+    ${day.map(d=>`<tr class="${d.m._id===S.uid?"me":""}"><td class="pos">${d.pos}</td><td class="nm">${esc(d.m.nick)}</td><td class="n"><b>${f2(d.pts)}</b></td><td class="n">${v(d.best)}</td></tr>`).join("")}</tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">A pari punti decide la <b>Miglior quota (MQ)</b> della giornata.</p></section>`;
   }
   return html;
 }
@@ -786,7 +811,7 @@ function vInfo(L){
   <section class="card"><h3>Regolamento lega</h3><table class="kv"><tbody>
    <tr><td>Accesso</td><td>${L.type==="private"?"Privata, con nome e password":"Pubblica"}</td></tr>
    <tr><td>Modalità</td><td>Quote</td></tr>
-   <tr><td>Spareggio</td><td>${TB_LABEL[L.tiebreak]}</td></tr>
+   <tr><td>Spareggio</td><td>${TB_TEXT}</td></tr>
    <tr><td>Durata</td><td>Dalla ${L.startRound}ª alla 38ª giornata</td></tr>
    <tr><td>Quote</td><td>Pubblicate dall'amministratore del sito prima di ogni giornata</td></tr></tbody></table>
    <ol class="rules"><li>Ogni giornata si pronostica l'esito 1, X o 2 delle 10 partite.</li><li>Pronostico giusto = punti pari alla quota. Sbagliato o mancante = 0.</li><li>Si può cambiare fino al calcio d'inizio di ogni partita.</li><li>Vince chi ha più punti all'ultima giornata.</li></ol></section>
@@ -852,8 +877,7 @@ function vCreate(){
   <section class="card"><div class="q">Accessibilità lega:<button class="help" data-act="help" data-k="access" aria-label="Spiegazione">?</button></div><div class="opts">
    ${opt("cf-type","cf-type-pr","private","form.type","Privata",f.type==="private",1)}${opt("cf-type","cf-type-pu","public","form.type","Pubblica",f.type==="public",1)}</div></section>
   ${f.type==="private"?`<section class="card"><div class="q">Scegli una password per la tua lega:</div><input type="text" id="cf-pw" data-bind="form.pw" value="${esc(f.pw)}" maxlength="30" autocomplete="off" placeholder="Almeno 4 caratteri"></section>`:""}
-  <section class="card"><div class="q">Criterio di spareggio:<button class="help" data-act="help" data-k="tie" aria-label="Spiegazione">?</button></div><div class="opts">
-   ${opt("cf-tb","cf-tb1","best_day","form.tiebreak","Miglior punteggio di giornata",f.tiebreak==="best_day")}${opt("cf-tb","cf-tb2","highest_odd","form.tiebreak","Quota più alta indovinata",f.tiebreak==="highest_odd")}</div></section>
+  <section class="card"><div class="q">Criterio di spareggio</div><div class="tiebox"><p><b>1.</b> A pari punti è più in alto chi ha il <b>Miglior punteggio di giornata (MP)</b>: i punti più alti fatti in una singola giornata.</p><p><b>2.</b> Se anche l'MP è uguale, conta la <b>Miglior quota (MQ)</b>: la quota più alta indovinata con un singolo pronostico.</p><p><b>3.</b> Se MP e MQ sono uguali, i giocatori condividono la posizione (es. due secondi posti) e chi segue scala di conseguenza.</p></div></section>
   <section class="card"><div class="q">Giornata di inizio della lega:</div><select id="cf-start" data-bind="form.start">${Array.from({length:38},(_,i)=>`<option value="${i+1}"${+f.start===i+1?" selected":""}>${i+1}° Giornata</option>`).join("")}</select></section>
   <section class="card"><div class="q">Il tuo nickname:</div><input type="text" id="cf-nick" data-bind="form.nick" value="${esc(f.nick)}" maxlength="20" placeholder="Come ti vedranno gli altri"></section>
   <p class="small muted center" style="font-family:var(--f-ui)">Si gioca in modalità Quote: ogni pronostico indovinato vale i punti della sua quota. Le quote le pubblica l'amministratore prima di ogni giornata.</p>
