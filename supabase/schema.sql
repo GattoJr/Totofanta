@@ -416,3 +416,31 @@ grant  execute on function public.league_name_by_code(text) to authenticated;
 -- ---------------------------------------------------------------------
 alter publication supabase_realtime add table
   public.leagues, public.members, public.picks, public.fixtures, public.odds, public.calendar_rounds;
+
+-- ---------------------------------------------------------------------
+-- Sincronizzazione automatica del calendario (funzione sync-calendario)
+-- ---------------------------------------------------------------------
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+create table if not exists private.settings (key text primary key, value text not null);
+insert into private.settings (key, value)
+values ('sync_secret', encode(extensions.gen_random_bytes(24), 'hex'))
+on conflict (key) do nothing;
+
+create or replace function public.check_sync_secret(p text) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from private.settings s where s.key = 'sync_secret' and s.value = p);
+$$;
+revoke execute on function public.check_sync_secret(text) from public, anon, authenticated;
+grant execute on function public.check_sync_secret(text) to service_role;
+
+create table if not exists public.sync_log (
+  id      bigint generated always as identity primary key,
+  ran_at  timestamptz not null default now(),
+  ok      boolean not null,
+  summary jsonb not null
+);
+alter table public.sync_log enable row level security;
+create policy sync_log_select on public.sync_log for select to authenticated using (public.is_site_admin());
