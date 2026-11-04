@@ -65,6 +65,7 @@ p{margin:0}
 /* fields & options as in "Crea una lega" */
 .q{font-weight:600;font-size:16px;display:flex;align-items:center;gap:8px}
 .q .help{margin-left:auto}
+.thhelp{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
 .help{width:26px;height:26px;border-radius:50%;border:2px solid var(--ink);background:none;font-weight:700;font-size:14px;line-height:1;display:grid;place-items:center;cursor:pointer;padding:0;color:var(--ink);flex:none}
 input[type=text],input[type=email],input[type=password],input[type=number],input[type=datetime-local],select{background:var(--field);border:1px solid transparent;border-radius:6px;padding:11px 14px;width:100%;min-width:0;font-weight:600;font-size:16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 input::placeholder{color:var(--muted);font-weight:500}

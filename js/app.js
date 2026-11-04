@@ -14,6 +14,7 @@ const BOT_NAMES=["Zona Cesarini","Catenaccio","Bomber86","Il Mister","Tiki Taka"
 const TB_LABEL={best_day:"Miglior punteggio di giornata",highest_odd:"Quota più alta"};
 const HELP={
   access:"Privata: si entra con il nome della lega e la password che scegli qui. Il link d'invito apre già la schermata con il nome della lega: basta scrivere la password.\nPubblica: chiunque può entrare con il nome della lega o con il link d'invito, senza password.",
+  mp:"Miglior punteggio: miglior punteggio ottenuto con una singola quota",
   tie:"Se due giocatori finiscono a pari punti, vince chi ha il punteggio di giornata più alto (o la quota indovinata più alta). Se c'è ancora parità si confronta il secondo valore, e così via.",
 };
 
@@ -388,7 +389,7 @@ function computeStandings(L,members,rounds,picks){
   rows.forEach((r,i)=>{const p=rows[i-1];r.pos=(p&&p.total===r.total&&cmpArr(p[tbKey],r[tbKey])===0)?p.pos:i+1;r.tbVal=r[tbKey][0]??null;r.tiedOnPoints=rows.some(o=>o!==r&&o.total===r.total)});
   return rows;
 }
-function roundScore(r,uid){const pk=pickDoc(`g${r.n}`,uid)?.picks||{};let pts=0,ok=0,count=0;for(const m of r.matches){const p=pk[m.id];if(p)count++;const e=esito(m);if(e&&p===e){pts+=cents(oddOf(m,p));ok++}}return{pts,ok,count}}
+function roundScore(r,uid){const pk=pickDoc(`g${r.n}`,uid)?.picks||{};let pts=0,ok=0,count=0,best=0;for(const m of r.matches){const p=pk[m.id];if(p)count++;const e=esito(m);if(e&&p===e){const c=cents(oddOf(m,p));pts+=c;ok++;if(c>best)best=c}}return{pts,ok,count,best}}
 
 /* ===================== Generatori di esempio ===================== */
 function genOdds(h,a){const d=(RATING[h]??72)+4-(RATING[a]??72);let pH=1/(1+Math.exp(-d/7));const pD=0.28-Math.min(0.1,Math.abs(d)/120);pH*=1-pD;const pA=1-pD-pH;const m=1.06;const o=p=>Math.max(1.05,Math.round(100/(p*m))/100);return{o1:o(pH),oX:o(pD),o2:o(pA)}}
@@ -701,18 +702,19 @@ function statusCard(L,r){
     if(roundDone(r))return `<p class="cta-title">${r.n}ª giornata conclusa</p><p class="count">Hai fatto <b>${f2(roundScore(r,S.uid).pts)}</b> punti</p><button class="btn wide" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
     return `<p class="cta-title">${r.n}ª giornata in corso</p><button class="btn wide" data-act="go" data-s="pronostici">Segui i tuoi pronostici</button>`}
   const pk=pickDoc(r._id,S.uid)?.picks||{};const missing=open.filter(m=>!pk[m.id]);
-  if(missing.length)return `<p class="cta-title">Inserisci i tuoi pronostici per la ${r.n}ª giornata</p><p class="count small muted">${missing.length} partit${missing.length===1?"a":"e"} senza pronostico</p><button class="btn wide" data-act="go" data-s="pronostici">Inserisci i tuoi pronostici</button>${kickTimer(r)}`;
-  return `<p class="cta-title">Hai già inserito i tuoi pronostici per la ${r.n}ª giornata</p><button class="btn wide" data-act="go" data-s="pronostici">Modifica i tuoi pronostici</button>${kickTimer(r)}`;
+  if(missing.length)return `<p class="cta-title">Inserisci i tuoi pronostici per la ${r.n}ª giornata</p><p class="count small muted">${missing.length} partit${missing.length===1?"a":"e"} senza pronostico</p><button class="btn wide" data-act="go" data-s="pronostici">Inserisci i tuoi pronostici</button>${kickTimer(r,"inserire")}`;
+  return `<p class="cta-title">Hai già inserito i tuoi pronostici per la ${r.n}ª giornata</p><button class="btn wide" data-act="go" data-s="pronostici">Modifica i tuoi pronostici</button>${kickTimer(r,"modificare")}`;
 }
 
 /* timer fino al fischio d'inizio della prima partita della giornata
    (se è già iniziata: fino al prossimo calcio d'inizio ancora da giocare) */
-function kickTimer(r){
+function kickTimer(r,verb){
   const now=Date.now();const ks=r.matches.map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x)).sort((a,b)=>a-b);if(!ks.length)return "";
-  const first=ks[0]>now;const t=first?ks[0]:ks.find(x=>x>now);if(!t)return "";
-  return `<div class="timer"><span class="lbl">${first?"Al fischio d'inizio della prima partita":"Al prossimo calcio d'inizio"}</span><span class="clock" data-deadline="${t}">${clockText(t-now)}</span><span class="small muted">${fmtDow(t)} · ${fmtTime(t)}</span></div>`;
+  const t=ks.find(x=>x>now);if(!t)return "";
+  return `<div class="timer"><span class="lbl">Hai ancora</span><span class="clock" data-deadline="${t}">${clockText(t-now)}</span><span class="lbl">per ${verb} i tuoi pronostici</span></div>`;
 }
-function clockText(ms){if(ms<=0)return "00:00:00";const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;return (d?`${d}g `:"")+`${pad(h)}:${pad(m)}:${pad(x)}`}
+/* formato XXgYYhZZmAAs: giorni, ore, minuti, secondi */
+function clockText(ms){ms=Math.max(0,ms);const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;return `${pad(d)}g${pad(h)}h${pad(m)}m${pad(x)}s`}
 /* aggiorna i timer ogni secondo senza ridisegnare la pagina; a scadenza ridisegna (blocco pronostici) */
 setInterval(()=>{const now=Date.now();let expired=false;document.querySelectorAll("[data-deadline]").forEach(el=>{const ms=+el.dataset.deadline-now;el.textContent=clockText(ms);if(ms<=0)expired=true});if(expired)render()},1000);
 
@@ -756,20 +758,20 @@ function vStandings(L){
   /* senza risultati: tutti i partecipanti a 0 punti, in ordine d'iscrizione */
   if(!scored.length){
     const list=approved().sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0));
-    return html+`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n">Esiti</th></tr></thead><tbody>
-    ${list.map(m=>`<tr class="${m._id===S.uid?"me":""}"><td class="pos">–</td><td class="nm">${esc(m.nick)}${m.bot?` <span class="chip">prova</span>`:""}</td><td class="n"><b>0.00</b></td><td class="n">0</td></tr>`).join("")}
+    return html+`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: miglior punteggio ottenuto con una singola quota" aria-label="MP, miglior punteggio: spiegazione">MP</button></th></tr></thead><tbody>
+    ${list.map(m=>`<tr class="${m._id===S.uid?"me":""}"><td class="pos">–</td><td class="nm">${esc(m.nick)}${m.bot?` <span class="chip">prova</span>`:""}</td><td class="n"><b>0.00</b></td><td class="n">–</td></tr>`).join("")}
     </tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">I punti arrivano con i primi risultati, dalla ${L.startRound}ª giornata.</p></section>`;
   }
   html+=`<div class="rounds" role="group" aria-label="Tipo di classifica"><button class="rchip" aria-pressed="${S.rankView==="gen"}" data-act="rank" data-v="gen">Generale</button>${scored.map(r=>`<button class="rchip" aria-pressed="${S.rankView==="g"+r.n}" data-act="rank" data-v="g${r.n}">${r.n}ª giornata</button>`).join("")}</div>`;
   if(S.rankView==="gen"){
-    html+=`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n">Esiti</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos">${r.pos}</td><td class="nm">${esc(r.nick)}${r.bot?` <span class="chip">prova</span>`:""}${r.tiedOnPoints?` <span class="chip warn" title="${TB_LABEL[L.tiebreak]}: ${r.tbVal!=null?f2(r.tbVal):"—"}">spareggio ${r.tbVal!=null?f2(r.tbVal):""}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${r.correct}</td></tr>`).join("")}
+    html+=`<section class="card"><h3>${esc(L.name)}</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: miglior punteggio ottenuto con una singola quota" aria-label="MP, miglior punteggio: spiegazione">MP</button></th></tr></thead><tbody>
+    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos">${r.pos}</td><td class="nm">${esc(r.nick)}${r.bot?` <span class="chip">prova</span>`:""}${r.tiedOnPoints?` <span class="chip warn" title="${TB_LABEL[L.tiebreak]}: ${r.tbVal!=null?f2(r.tbVal):"—"}">spareggio ${r.tbVal!=null?f2(r.tbVal):""}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${r.wonOdds.length?f2(r.wonOdds[0]):"–"}</td></tr>`).join("")}
     </tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">A pari punti decide: <b>${TB_LABEL[L.tiebreak]}</b>.</p></section>`;
   }else{
     const r=S.rounds.find(x=>"g"+x.n===S.rankView);if(!r){S.rankView="gen";return vStandings(L)}
     const day=approved().map(m=>({m,...roundScore(r,m._id)})).sort((a,b)=>b.pts-a.pts||b.ok-a.ok);
-    html+=`<section class="card"><h3>${r.n}ª giornata</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n">Esiti</th></tr></thead><tbody>
-    ${day.map((d,i)=>`<tr class="${d.m._id===S.uid?"me":""}"><td class="pos">${i>0&&day[i-1].pts===d.pts?"=":i+1}</td><td class="nm">${esc(d.m.nick)}</td><td class="n"><b>${f2(d.pts)}</b></td><td class="n">${d.ok}/${r.matches.length}</td></tr>`).join("")}</tbody></table></div></section>`;
+    html+=`<section class="card"><h3>${r.n}ª giornata</h3><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: miglior punteggio ottenuto con una singola quota" aria-label="MP, miglior punteggio: spiegazione">MP</button></th></tr></thead><tbody>
+    ${day.map((d,i)=>`<tr class="${d.m._id===S.uid?"me":""}"><td class="pos">${i>0&&day[i-1].pts===d.pts?"=":i+1}</td><td class="nm">${esc(d.m.nick)}</td><td class="n"><b>${f2(d.pts)}</b></td><td class="n">${d.best?f2(d.best):"–"}</td></tr>`).join("")}</tbody></table></div></section>`;
   }
   return html;
 }
