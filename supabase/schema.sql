@@ -150,11 +150,13 @@ language sql stable security definer set search_path = '' as $$
   select coalesce((select f.kickoff is not null and now() >= f.kickoff from public.fixtures f where f.id = fid), true);
 $$;
 
--- Si può ancora pronosticare? (giornata pubblicata, quote presenti, partita non iniziata)
+-- Si può ancora pronosticare? (giornata pubblicata, quote presenti,
+-- e la giornata non è ancora iniziata: si chiude al fischio d'inizio della sua prima partita)
 create or replace function public.fixture_open(fid int) returns boolean
 language sql stable security definer set search_path = '' as $$
   select coalesce(
-    (select f.kickoff is not null and now() < f.kickoff
+    (select f.kickoff is not null
+            and now() < (select min(g.kickoff) from public.fixtures g where g.n = f.n)
             and public.round_published(f.n)
             and exists (select 1 from public.odds o where o.fixture_id = f.id)
        from public.fixtures f where f.id = fid),
@@ -298,7 +300,7 @@ revoke insert, delete on public.calendar_rounds from authenticated, anon;
 -- Pronostici:
 --  · i propri si vedono sempre;
 --  · quelli degli altri solo dopo il calcio d'inizio della partita;
---  · si scrivono solo prima del calcio d'inizio e a giornata pubblicata;
+--  · si scrivono solo prima del fischio d'inizio della prima partita della giornata, a giornata pubblicata;
 --  · l'admin della lega può scrivere quelli dei giocatori di prova.
 create policy picks_select on public.picks for select to authenticated
   using ( public.owns_member(member_id)

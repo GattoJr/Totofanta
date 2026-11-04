@@ -316,7 +316,7 @@ function selectLeague(lid){
 function savedPicks(rId){return pickDoc(rId,S.uid)?.picks||{}}
 function draftPicks(r){return S.draft[r._id]||savedPicks(r._id)}
 function pickChanges(r){const d=S.draft[r._id];if(!d)return[];const sv=savedPicks(r._id);
-  return r.matches.filter(m=>!matchLocked(r,m)&&(d[m.id]||null)!==(sv[m.id]||null)).map(m=>({m,p:d[m.id]||null}))}
+  if(roundLocked(r))return[];return r.matches.filter(m=>(d[m.id]||null)!==(sv[m.id]||null)).map(m=>({m,p:d[m.id]||null}))}
 function picksDirty(){return S.rounds.some(r=>pickChanges(r).length>0)}
 /* chiede conferma se si lascia la pagina pronostici con modifiche non salvate */
 function guard(next){if(S.screen==="pronostici"&&picksDirty()){S.leave={next};S.drawer=false;render();return true}return false}
@@ -357,12 +357,14 @@ function oddsComplete(r){return r.matches.length>0&&r.matches.every(m=>m.home&&m
 function firstKick(r){const ks=r.matches.map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x));return ks.length?Math.min(...ks):null}
 function roundVisible(r){return !!r.published&&oddsComplete(r)}
 function matchLocked(r,m){const k=+new Date(m.kickoff);return !isNaN(k)&&Date.now()>=k}
+/* la giornata si chiude al fischio d'inizio della sua prima partita: da lì nessun pronostico si cambia */
+function roundLocked(r){const k=firstKick(r);return k!=null&&Date.now()>=k}
 function roundDone(r){return r.matches.length>0&&r.matches.every(m=>esito(m))}
 function roundStatus(r,L){
   if(roundDone(r))return{t:"Conclusa",c:"ok"};
   if(r.matches.some(m=>esito(m)))return{t:"In corso",c:"blue"};
   if(!roundVisible(r))return r.matches.every(m=>matchLocked(r,m))?{t:"Non giocata",c:""}:{t:"Quote in arrivo",c:"warn"};
-  if(r.matches.every(m=>matchLocked(r,m)))return{t:"Chiusa",c:""};
+  if(roundLocked(r))return{t:"Chiusa",c:""};
   return{t:"Aperta",c:"ok"};
 }
 /* calendario */
@@ -446,7 +448,7 @@ const ACT={
   others:()=>{S.showOthers=!S.showOthers;render()},
   pick:d=>{
     const r=S.rounds.find(x=>x._id===d.r);if(!r)return;const m=r.matches.find(x=>x.id===d.m);
-    if(!m||matchLocked(r,m))return toast("Partita già iniziata: pronostico bloccato");
+    if(!m||roundLocked(r))return toast("Giornata iniziata: i pronostici sono chiusi");
     const cur={...draftPicks(r)};if(cur[m.id]===d.p)delete cur[m.id];else cur[m.id]=d.p;
     S.draft[r._id]=cur;render();
   },
@@ -677,7 +679,7 @@ function vNoLeague(){
   <button class="btn wide" data-act="newLeague">Crea una lega</button><button class="btn wide" data-act="joinModal">Unisciti a una lega</button></section>
   <section class="card"><h2>Come si gioca</h2><ol class="rules">
    <li>Prima di ogni giornata arrivano le quote 1 · X · 2 delle 10 partite di Serie A.</li>
-   <li>Scegli un esito per ogni partita: puoi cambiarlo fino al calcio d'inizio.</li>
+   <li>Scegli un esito per ogni partita: puoi cambiarlo fino al fischio d'inizio della prima partita della giornata.</li>
    <li>Pronostico giusto = punti pari alla quota. Juventus–Inter con il 2 a 1.75 vale 1.75 punti.</li>
    <li>A fine campionato vince chi ha più punti.</li></ol></section>`;
 }
@@ -726,7 +728,7 @@ function statusCard(L,r){
   if(!r){return `<p class="cta-title">La competizione non è ancora iniziata</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">Si parte dalla ${L.startRound}ª giornata</p>`}
   if(!roundVisible(r)){const k=firstKick(r);
     return `<p class="cta-title">${S.rounds[0]===r&&!S.rounds.some(x=>x.matches.some(m=>esito(m)))?"La competizione non è ancora iniziata":`Quote della ${r.n}ª giornata in arrivo`}</p><button class="btn wide" data-act="go" data-s="lega">Invita alla tua lega</button><p class="count">${k?`Si gioca da ${fmtDow(k)} · le quote arrivano prima della giornata`:"Le quote arrivano prima della giornata"}</p>`}
-  const open=r.matches.filter(m=>!matchLocked(r,m));
+  const open=roundLocked(r)?[]:r.matches;
   if(!open.length){
     if(roundDone(r))return `<p class="cta-title">${r.n}ª giornata conclusa</p><p class="count">Hai fatto <b>${f2(roundScore(r,S.uid).pts)}</b> punti</p><button class="btn wide" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
     return `<p class="cta-title">${r.n}ª giornata in corso</p><button class="btn wide" data-act="go" data-s="pronostici">Segui i tuoi pronostici</button>`}
@@ -735,11 +737,10 @@ function statusCard(L,r){
   return `<p class="cta-title">Hai già inserito i tuoi pronostici per la ${r.n}ª giornata</p><button class="btn wide" data-act="go" data-s="pronostici">Modifica i tuoi pronostici</button>${kickTimer(r,"modificare")}`;
 }
 
-/* timer fino al fischio d'inizio della prima partita della giornata
-   (se è già iniziata: fino al prossimo calcio d'inizio ancora da giocare) */
+/* timer fino al fischio d'inizio della prima partita della giornata (chiusura dei pronostici) */
 function kickTimer(r,verb){
   const now=Date.now();const ks=r.matches.map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x)).sort((a,b)=>a-b);if(!ks.length)return "";
-  const t=ks.find(x=>x>now);if(!t)return "";
+  const t=ks[0];if(t<=now)return "";
   return `<div class="timer"><span class="lbl">Hai ancora</span><span class="clock" data-deadline="${t}">${clockText(t-now)}</span><span class="lbl">per ${verb} i tuoi pronostici</span></div>`;
 }
 /* formato XXgYYhZZmAAs: giorni, ore, minuti, secondi */
@@ -756,17 +757,17 @@ function vPicks(L){
   let html=`<div class="row"><h2 class="grow">${r.n}° Giornata</h2><span class="chip ${st.c}">${st.t}</span></div>`;
   if(list.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${list.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
   if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
-  const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=r.matches.some(m=>!matchLocked(r,m));
+  const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=!roundLocked(r);
   html+=r.matches.map(m=>{
-    const locked=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
+    const locked=roundLocked(r);const started=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
       return `<button class="${cls}" ${locked?"disabled":""} data-act="pick" data-r="${r._id}" data-m="${m.id}" data-p="${k}" aria-pressed="${sel}" aria-label="${esc(m.home)}–${esc(m.away)}: ${k}, quota ${o?o.toFixed(2):"non disponibile"}"><span class="s">${k}</span><span class="o">${o?o.toFixed(2):"—"}</span></button>`};
     const mid=e?`<span class="score">${m.hg}-${m.ag}</span>`:"VS";
-    const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(locked?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
+    const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(started?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
     return `<section class="card match"><div class="date">${fmtFull(m.kickoff)}</div><div class="line">${crest(m.home,1)}<span class="h">${esc(m.home)}</span><span class="vs">${mid}</span><span class="a">${esc(m.away)}</span>${crest(m.away,1)}</div><div class="picks">${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div><div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div></div>
-  <p class="center small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al calcio d'inizio di ogni partita.</p></section>`;
+  <p class="center small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
   if(anyOpen)html+=`<div class="savebar"><span class="small">${dirty?"Modifiche da salvare":"Nessuna modifica da salvare"}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":"Salva"}</button></div>`;
   html+=vOthers(r);
   return html;
@@ -814,7 +815,7 @@ function vInfo(L){
    <tr><td>Spareggio</td><td>${TB_TEXT}</td></tr>
    <tr><td>Durata</td><td>Dalla ${L.startRound}ª alla 38ª giornata</td></tr>
    <tr><td>Quote</td><td>Pubblicate dall'amministratore del sito prima di ogni giornata</td></tr></tbody></table>
-   <ol class="rules"><li>Ogni giornata si pronostica l'esito 1, X o 2 delle 10 partite.</li><li>Pronostico giusto = punti pari alla quota. Sbagliato o mancante = 0.</li><li>Si può cambiare fino al calcio d'inizio di ogni partita.</li><li>Vince chi ha più punti all'ultima giornata.</li></ol></section>
+   <ol class="rules"><li>Ogni giornata si pronostica l'esito 1, X o 2 delle 10 partite.</li><li>Pronostico giusto = punti pari alla quota. Sbagliato o mancante = 0.</li><li>Si può cambiare fino al fischio d'inizio della prima partita della giornata.</li><li>Vince chi ha più punti all'ultima giornata.</li></ol></section>
   <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m.bot?` <span class="chip">prova</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ${S.confirm==="rm-"+m._id?"danger":"ghost"}" data-act="removeMember" data-u="${m._id}">${S.confirm==="rm-"+m._id?"Conferma":"Rimuovi"}</button>`:""}</div>`).join("")}</div></section>
   ${admin&&S.confirm==="delLeague"?`<section class="card"><h3>Eliminare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Spariscono giornate, schedine e classifica per tutti i partecipanti. Non si può annullare.</p><div class="row"><button class="btn danger" data-act="delLeague">Elimina definitivamente</button><button class="btn sec" data-act="go" data-s="lega">Annulla</button></div></section>`:""}`;
 }
