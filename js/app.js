@@ -153,6 +153,7 @@ const AUTH_ERR=[
   [/rate limit|too many|security purposes/i,"Troppi tentativi ravvicinati: riprova tra qualche minuto"],
   [/unable to validate email|invalid email|email address .* is invalid/i,"Indirizzo email non valido"],
   [/failed to fetch|network/i,"Connessione assente: controlla internet e riprova"],
+  [/provider is not enabled|unsupported provider/i,"L'accesso con Google non è ancora attivo"],
 ];
 const itMsg=e=>{const m=(e&&e.message)||String(e||"");for(const[re,t]of AUTH_ERR)if(re.test(m))return t;return m||"Qualcosa è andato storto, riprova"};
 const Online={
@@ -175,7 +176,8 @@ const Online={
     S.uid=uid;S.authReady=true;
     if(this.chan){this.sb.removeChannel(this.chan);this.chan=null}
     if(!uid){S.leagues=[];S.me={leagues:[]};S.meLoaded=true;S.lid=null;S.members=[];S.rounds=[];S.picks=[];S.fixtures=[];S.odds={};S.calRounds={};S.siteAdmin=false;render();return}
-    if(location.hash.includes("access_token")||location.hash.includes("type=")){try{history.replaceState(null,"",location.pathname+location.search)}catch{}}
+    if(location.hash.includes("access_token")||location.hash.includes("type=")||/[?&]code=/.test(location.search)){try{history.replaceState(null,"",location.pathname)}catch{}}
+    const inv=lsGet("totofanta-pending-invite");if(inv){lsSet("totofanta-pending-invite","");S.modal="join";S.form={code:inv,useCode:true,name:"",pw:"",nick:""}}
     S.meLoaded=false;render();
     await Promise.all([this.refreshLeagues(),this.loadFixtures()]);
     pickDefaultLeague();
@@ -256,6 +258,10 @@ const Online={
   inviteCode(L){return S.invite[L._id]||""},
   // ---- account
   async signIn(email,pw){this.check(await this.sb.auth.signInWithPassword({email,password:pw}))},
+  async signInGoogle(){
+    if(S.modal==="join"&&S.form.code)lsSet("totofanta-pending-invite",S.form.code);  // l'invito sopravvive al passaggio da Google
+    this.check(await this.sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+location.pathname}}));
+  },
   async signUp(email,pw){const d=this.check(await this.sb.auth.signUp({email,password:pw,options:{emailRedirectTo:location.origin+location.pathname}}));return !!d.session},
   async resetPw(email){this.check(await this.sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname}))},
   async updatePw(pw){this.check(await this.sb.auth.updateUser({password:pw}))},
@@ -459,6 +465,7 @@ const ACT={
     const f=S.authForm;if((f.pw||"").length<6)return err("La password deve avere almeno 6 caratteri");if(f.pw!==f.pw2)return err("Le due password non coincidono");
     S.busy=true;render();try{await Online.updatePw(f.pw);S.formErr="";S.authForm.pw=S.authForm.pw2="";toast("Password aggiornata");go("home")}catch(e){S.formErr=itMsg(e)}finally{S.busy=false;render()}
   },
+  google:async()=>{S.formErr="";S.busy=true;render();try{await Online.signInGoogle()}catch(e){S.formErr=itMsg(e);S.busy=false;render()}},
   logout:async()=>{S.drawer=false;await Online.signOut();S.screen="home";render()},
 };
 function switchLocal(id){S.uid=id;saveLocalUsers();selectLeague(null);Local.subscribeMe();toast("Ora giochi come "+(S.localUsers.find(u=>u.id===id)?.name||""));render()}
@@ -545,6 +552,8 @@ function vLogin(){
   const f=S.authForm;const up=f.mode==="signup";
   return `<form class="card" data-submit="login" novalidate>
    <h2 class="center">${up?"Crea il tuo account":"Login"}</h2>
+   <button class="btn block gbtn" type="button" data-act="google" ${S.busy?"disabled":""}><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.3 5.7c4.3-3.9 7-9.8 7-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.3-5.7c-2.2 1.5-5 2.3-8.6 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>Continua con Google</button>
+   <div class="sep"><span>oppure con email</span></div>
    ${S.authMsg?`<p class="tip">${esc(S.authMsg)}</p>`:""}
    <input type="email" id="au-email" data-bind="authForm.email" value="${esc(f.email)}" placeholder="Email" autocomplete="email" inputmode="email" style="background:var(--field)">
    <input type="password" id="au-pw" data-bind="authForm.pw" value="${esc(f.pw)}" placeholder="Password${up?" (almeno 6 caratteri)":""}" autocomplete="${up?"new-password":"current-password"}">

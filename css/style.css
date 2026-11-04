@@ -222,3 +222,9 @@ tr.me td{background:var(--blue-soft)}
 .adm-m .sc{display:flex;align-items:center;gap:4px}
 .adm-m .sc input{width:48px;text-align:center;font-family:var(--f-num);padding:7px 4px}
 .adm-m .st{grid-column:1/-1}
+
+/* ---- Accesso con Google ---- */
+.gbtn{display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1f1f1f;border:1px solid #dadce0;text-transform:none;font-weight:600}
+.gbtn svg{width:20px;height:20px;flex:none}
+.sep{display:flex;align-items:center;gap:10px;color:var(--muted);font-family:var(--f-ui);font-size:13px}
+.sep::before,.sep::after{content:"";flex:1;border-top:1px solid var(--line)}
