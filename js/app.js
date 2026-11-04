@@ -38,6 +38,8 @@ const oddOf=(m,p)=>p==="1"?m.o1:p==="X"?m.oX:m.o2;
 const pad=n=>String(n).padStart(2,"0");
 const fmtDay=s=>{const d=new Date(s);return isNaN(d)?"—":`${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`};
 const fmtTime=s=>{const d=new Date(s);return isNaN(d)?"—":`${pad(d.getHours())}:${pad(d.getMinutes())}`};
+const DOW=["dom","lun","mar","mer","gio","ven","sab"];
+const fmtDow=s=>{const d=new Date(s);return isNaN(d)?"—":`${DOW[d.getDay()]} ${pad(d.getDate())}/${pad(d.getMonth()+1)}`};
 const fmtFull=s=>{const d=new Date(s);return isNaN(d)?"—":`${fmtDay(s)} - ${fmtTime(s)}`};
 const toLocalInput=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const toInput=s=>{if(!s)return "";const d=new Date(s);return isNaN(d)?"":toLocalInput(d)};
@@ -61,6 +63,7 @@ const S={
   form:{},formErr:"",authForm:{mode:"login",email:"",pw:"",pw2:""},authMsg:"",busy:false,
   draft:null,editRid:null,confirm:null,showOthers:false,
   localUsers:[],
+  fixtures:[],siteAdmin:false,calN:null,calEdit:{},
 };
 
 /* =====================================================================
@@ -85,6 +88,8 @@ const Local={
     if(!S.localUsers.length)S.localUsers=[{id:"local-"+rid(6),name:"Giocatore 1"}];
     const cur=lsGet("totofanta-local-cur");
     S.uid=S.localUsers.find(u=>u.id===cur)?cur:S.localUsers[0].id;saveLocalUsers();
+    S.siteAdmin=true;this.fixturesFrom(LocalStore.list("calendar"));
+    LocalStore.watch("calendar",d=>{this.fixturesFrom(d);render()});
     LocalStore.watch("leagues",docs=>{S.leagues=docs;render()});
     this.subscribeMe();
   },
@@ -96,7 +101,7 @@ const Local={
   openLeague(lid){
     unsubLeague.forEach(u=>u());unsubLeague=[];if(!lid)return;
     unsubLeague.push(LocalStore.watch(`leagues/${lid}/members`,d=>{if(S.lid!==lid)return;S.members=d;S.loaded.members=true;render()}));
-    unsubLeague.push(LocalStore.watch(`leagues/${lid}/rounds`,d=>{if(S.lid!==lid)return;S.rounds=d.sort((a,b)=>a.n-b.n);S.loaded.rounds=true;render()}));
+    unsubLeague.push(LocalStore.watch(`leagues/${lid}/rounds`,d=>{if(S.lid!==lid)return;S.rounds=d.map(withCalendar).sort((a,b)=>a.n-b.n);S.loaded.rounds=true;render()}));
     unsubLeague.push(LocalStore.watch(`leagues/${lid}/picks`,d=>{if(S.lid!==lid)return;S.picks=d;S.loaded.picks=true;render()}));
   },
   async addToMe(lid){const ls=Array.from(new Set([...(S.me.leagues||[]),lid]));S.me={...S.me,leagues:ls};await LocalStore.set(`data/users/${S.uid}/me`,{leagues:ls})},
@@ -133,6 +138,10 @@ const Local={
   async botPicks(r,bots){for(const b of bots){const pk={};r.matches.forEach(m=>{if(m.o1)pk[m.id]=sampleEsito(m)});await LocalStore.set(`leagues/${S.lid}/picks/${r._id}~${b._id}`,{uid:b._id,round:r._id,picks:pk,updatedAt:Date.now()})}},
   async deleteLeague(){const lid=S.lid;for(const p of S.picks)await LocalStore.del(`leagues/${lid}/picks/${p._id}`);for(const r of S.rounds)await LocalStore.del(`leagues/${lid}/rounds/${r._id}`);for(const m of S.members)await LocalStore.del(`leagues/${lid}/members/${m._id}`);await LocalStore.del(`leagues/${lid}`);await this.removeFromMe(lid)},
   inviteCode(L){return L.inviteCode},
+  // calendario: accoppiamenti da js/calendario.js, orari modificati salvati nel browser
+  fixturesFrom(docs){const ov={};for(const d of docs)ov[d._id]=d;
+    S.fixtures=(window.CALENDARIO_SERIE_A||[]).map(([n,pos,home,away,kickoff,day])=>{const id=n*100+pos;const o=ov[id];return{id,n,pos,home,away,kickoff:o&&"kickoff" in o?o.kickoff:kickoff,day}})},
+  async saveFixtures(changes){for(const c of changes)await LocalStore.set(`calendar/${c.id}`,{kickoff:c.kickoff})},
 };
 function saveLocalUsers(){lsSet("totofanta-local-users",JSON.stringify(S.localUsers));lsSet("totofanta-local-cur",S.uid)}
 
@@ -168,10 +177,10 @@ const Online={
     if(uid===S.uid&&S.authReady)return render();
     S.uid=uid;S.authReady=true;
     if(this.chan){this.sb.removeChannel(this.chan);this.chan=null}
-    if(!uid){S.leagues=[];S.me={leagues:[]};S.meLoaded=true;S.lid=null;S.members=[];S.rounds=[];S.picks=[];render();return}
+    if(!uid){S.leagues=[];S.me={leagues:[]};S.meLoaded=true;S.lid=null;S.members=[];S.rounds=[];S.picks=[];S.fixtures=[];S.siteAdmin=false;render();return}
     if(location.hash.includes("access_token")||location.hash.includes("type=")){try{history.replaceState(null,"",location.pathname+location.search)}catch{}}
     S.meLoaded=false;render();
-    await this.refreshLeagues();
+    await Promise.all([this.refreshLeagues(),this.loadFixtures()]);
     pickDefaultLeague();
     this.subscribe();
     render();
@@ -179,6 +188,7 @@ const Online={
   subscribe(){
     const ch=this.sb.channel("tf-"+S.uid);
     for(const t of ["leagues","members","rounds","matches","picks"])ch.on("postgres_changes",{event:"*",schema:"public",table:t},()=>this.refreshSoon());
+    ch.on("postgres_changes",{event:"*",schema:"public",table:"fixtures"},()=>{clearTimeout(this.tf);this.tf=setTimeout(()=>this.loadFixtures().then(render),400)});
     ch.subscribe();this.chan=ch;
   },
   refreshSoon(){clearTimeout(this.t);this.t=setTimeout(()=>this.refresh(),250)},
@@ -191,6 +201,16 @@ const Online={
     if(S.lid&&!S.me.leagues.includes(S.lid))pickDefaultLeague();
   },
   openLeague(lid){if(lid)this.loadLeague(lid).then(render)},
+  async loadFixtures(){
+    const [f,a]=await Promise.all([this.sb.from("fixtures").select("*").order("id"),this.sb.from("site_admins").select("user_id").eq("user_id",S.uid)]);
+    if(f.error){console.warn("Calendario non disponibile (manca la migrazione 02?)",f.error);S.fixtures=[];S.siteAdmin=false;return}
+    S.fixtures=f.data.map(x=>({id:x.id,n:x.n,pos:x.pos,home:x.home,away:x.away,kickoff:x.kickoff||null,day:x.day}));
+    S.siteAdmin=!a.error&&a.data.length>0;
+  },
+  async saveFixtures(changes){
+    for(const c of changes){const d=this.check(await this.sb.from("fixtures").update({kickoff:c.kickoff}).eq("id",c.id).select("id"));if(!d.length)throw new Error("Non hai i permessi per modificare il calendario")}
+    await this.loadFixtures();await this.refresh();
+  },
   async loadLeague(lid){
     const seq=++this.loadSeq;const sb=this.sb;
     const [mem,rnd,mat,pk,inv]=await Promise.all([
@@ -204,8 +224,8 @@ const Online={
     const e=mem.error||rnd.error||mat.error||pk.error;if(e){console.warn(e);toast("Errore nel caricare la lega: "+itMsg(e));return}
     S.invite[lid]=inv.data||null;
     S.members=mem.data.map(m=>({_id:m.user_id||m.id,mid:m.id,nick:m.nickname,status:m.status,bot:m.is_bot,joinedAt:Date.parse(m.joined_at)}));
-    const byRound={};for(const m of mat.data)(byRound[m.round_id]=byRound[m.round_id]||[]).push({id:m.id,pos:m.pos,home:m.home||"",away:m.away||"",kickoff:m.kickoff||"",o1:m.o1==null?null:Number(m.o1),oX:m.ox==null?null:Number(m.ox),o2:m.o2==null?null:Number(m.o2),hg:m.hg,ag:m.ag});
-    S.rounds=rnd.data.map(r=>({_id:"g"+r.n,dbid:r.id,n:r.n,published:r.published,lockedAt:r.locked_at?Date.parse(r.locked_at):null,firstKickoff:r.first_kickoff,matches:(byRound[r.id]||[]).sort((a,b)=>a.pos-b.pos)}));
+    const byRound={};for(const m of mat.data)(byRound[m.round_id]=byRound[m.round_id]||[]).push({id:m.id,pos:m.pos,fixtureId:m.fixture_id??null,home:m.home||"",away:m.away||"",kickoff:m.kickoff||"",o1:m.o1==null?null:Number(m.o1),oX:m.ox==null?null:Number(m.ox),o2:m.o2==null?null:Number(m.o2),hg:m.hg,ag:m.ag});
+    S.rounds=rnd.data.map(r=>withCalendar({_id:"g"+r.n,dbid:r.id,n:r.n,published:r.published,lockedAt:r.locked_at?Date.parse(r.locked_at):null,firstKickoff:r.first_kickoff,matches:(byRound[r.id]||[]).sort((a,b)=>a.pos-b.pos)}));
     const matchRound={};for(const r of S.rounds)for(const m of r.matches)matchRound[m.id]=r._id;
     const memberKey={};for(const m of S.members)memberKey[m.mid]=m._id;
     const docs={};
@@ -232,7 +252,7 @@ const Online={
   async saveRound(body,existing){
     const sb=this.sb;let rdb=existing?.dbid;
     if(!rdb){rdb=this.check(await sb.from("rounds").insert({league_id:S.lid,n:body.n,published:false}).select("id").single()).id}
-    const rows=body.matches.map((m,i)=>({round_id:rdb,pos:i+1,home:m.home||null,away:m.away||null,kickoff:m.kickoff?new Date(m.kickoff).toISOString():null,o1:m.o1,ox:m.oX,o2:m.o2,hg:m.hg,ag:m.ag}));
+    const rows=body.matches.map((m,i)=>({round_id:rdb,pos:i+1,...(S.fixtures.length?{fixture_id:m.fixtureId||null}:{}),home:m.home||null,away:m.away||null,kickoff:m.kickoff?new Date(m.kickoff).toISOString():null,o1:m.o1,ox:m.oX,o2:m.o2,hg:m.hg,ag:m.ag}));
     this.check(await sb.from("matches").upsert(rows,{onConflict:"round_id,pos"}));
     this.check(await sb.from("rounds").update({published:body.published,locked_at:body.lockedAt?new Date(body.lockedAt).toISOString():null}).eq("id",rdb));
     await this.refresh();return "g"+body.n;
@@ -297,6 +317,12 @@ function roundStatus(r,L){
   if(r.matches.every(m=>matchLocked(r,m)))return{t:"Chiusa",c:""};
   return{t:"Aperta",c:"ok"};
 }
+/* calendario */
+const fixtureById=id=>S.fixtures.find(f=>f.id===id);
+const fixturesOf=n=>S.fixtures.filter(f=>f.n===n).sort((a,b)=>a.pos-b.pos);
+function withCalendar(r){if(!S.fixtures.length)return r;return{...r,matches:(r.matches||[]).map(m=>{const f=m.fixtureId&&fixtureById(m.fixtureId);return f?{...m,home:f.home,away:f.away,kickoff:f.kickoff||""}:m})}}
+function calendarDraft(n){return fixturesOf(n).map(f=>({id:"",fixtureId:f.id,home:f.home,away:f.away,kickoff:toInput(f.kickoff),day:f.day,o1:"",oX:"",o2:"",hg:"",ag:""}))}
+function nextCalendarRound(){const now=Date.now();for(let n=1;n<=38;n++){const fs=fixturesOf(n);if(fs.some(f=>{const t=f.kickoff?Date.parse(f.kickoff):Date.parse(f.day+"T23:59");return t>=now}))return n}return 38}
 function currentRound(){const list=S.rounds;if(!list.length)return null;return list.find(r=>!roundDone(r))||list[list.length-1]}
 
 /* ===================== Punteggi e classifica ===================== */
@@ -341,7 +367,7 @@ const ACT={
   drawer:()=>{S.drawer=!S.drawer;render()},
   closeAll:()=>{S.drawer=false;S.modal=null;S.help=null;render()},
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
-  newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:"1",timer:"24",nick:"",logo:null};go("create")},
+  newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?nextCalendarRound():1),timer:"24",nick:"",logo:null};go("create")},
   joinModal:()=>{S.form={name:"",pw:"",nick:"",code:"",useCode:false};S.formErr="";S.modal="join";S.drawer=false;render()},
   toggleCode:()=>{S.form.useCode=!S.form.useCode;S.formErr="";render()},
   pickLeague:d=>{selectLeague(d.lid);go("home")},
@@ -380,10 +406,11 @@ const ACT={
   approve:d=>safe(async()=>{await B.approve(S.members.find(x=>x._id===d.u));toast("Giocatore approvato")}),
   reject:d=>safe(async()=>{await B.removeMember(S.members.find(x=>x._id===d.u));toast("Richiesta rifiutata")}),
   newRound:()=>{const L=league();const used=new Set(S.rounds.map(r=>r.n));let n=Math.max(L.startRound,...S.rounds.map(r=>r.n+1));while(used.has(n))n++;if(n>38)return toast("Hai già creato tutte le giornate fino alla 38ª");
-    S.draft={n:String(n),isNew:true,published:false,lockedAt:null,matches:Array.from({length:10},()=>({id:"",home:"",away:"",kickoff:"",o1:"",oX:"",o2:"",hg:"",ag:""}))};S.editRid="new";S.formErr="";render();window.scrollTo(0,0)},
+    const cal=calendarDraft(n);
+    S.draft={n:String(n),isNew:true,published:false,lockedAt:null,matches:cal.length===10?cal:Array.from({length:10},()=>({id:"",home:"",away:"",kickoff:"",o1:"",oX:"",o2:"",hg:"",ag:""}))};S.editRid="new";S.formErr="";render();window.scrollTo(0,0)},
   editRound:d=>{const r=S.rounds.find(x=>x._id===d.r);
     const ms=Array.from({length:10},(_,i)=>r.matches[i]||{id:"",home:"",away:"",kickoff:"",o1:null,oX:null,o2:null,hg:null,ag:null});
-    S.draft={n:String(r.n),isNew:false,published:r.published,lockedAt:r.lockedAt,matches:ms.map(m=>({id:m.id,home:m.home||"",away:m.away||"",kickoff:toInput(m.kickoff),o1:m.o1?.toFixed(2)??"",oX:m.oX?.toFixed(2)??"",o2:m.o2?.toFixed(2)??"",hg:m.hg??"",ag:m.ag??""}))};
+    S.draft={n:String(r.n),isNew:false,published:r.published,lockedAt:r.lockedAt,matches:ms.map(m=>({id:m.id,fixtureId:m.fixtureId||null,day:m.fixtureId?fixtureById(m.fixtureId)?.day:null,home:m.home||"",away:m.away||"",kickoff:toInput(m.kickoff),o1:m.o1?.toFixed(2)??"",oX:m.oX?.toFixed(2)??"",o2:m.o2?.toFixed(2)??"",hg:m.hg??"",ag:m.ag??""}))};
     S.editRid=d.r;S.confirm=null;S.formErr="";render();window.scrollTo(0,0)},
   closeEditor:()=>{S.draft=null;S.editRid=null;S.confirm=null;S.formErr="";render()},
   fillExample:()=>{const ex=exampleMatches();S.draft.matches=S.draft.matches.map((m,i)=>({...ex[i],id:m.id}));render();toast("Giornata di esempio con quote generate")},
@@ -396,6 +423,15 @@ const ACT={
   removeMember:d=>{if(S.confirm!=="rm-"+d.u){S.confirm="rm-"+d.u;return render()}safe(async()=>{await B.removeMember(S.members.find(x=>x._id===d.u));S.confirm=null;toast("Giocatore rimosso")})},
   delLeague:()=>{if(S.confirm!=="delLeague"){S.confirm="delLeague";S.drawer=false;S.screen="lega";return render()}
     safe(async()=>{await B.deleteLeague();S.confirm=null;selectLeague(null);pickDefaultLeague();toast("Lega eliminata");go("home")})},
+  // ---- calendario Serie A
+  openCal:d=>{S.calN=+d.n||S.calN||nextCalendarRound();S.calEdit={};go("calendario")},
+  calStep:d=>{const n=Math.min(38,Math.max(1,(S.calN||nextCalendarRound())+(+d.d)));if(n!==S.calN){S.calN=n;S.calEdit={}}render()},
+  calUndo:()=>{S.calEdit={};render()},
+  saveCal:()=>{
+    const changes=fixturesOf(S.calN).filter(f=>f.id in S.calEdit&&S.calEdit[f.id]!==toInput(f.kickoff)).map(f=>{const v=S.calEdit[f.id];const d=v?new Date(v):null;return{id:f.id,kickoff:d&&!isNaN(d)?d.toISOString():null}});
+    if(!changes.length)return toast("Nessun orario modificato");
+    safe(async()=>{await B.saveFixtures(changes);S.calEdit={};toast(`${changes.length===1?"1 orario aggiornato":changes.length+" orari aggiornati"}${ONLINE?" per tutte le leghe":""}`)});
+  },
   // ---- modalità prova
   addLocal:()=>{const u={id:"local-"+rid(6),name:"Giocatore "+(S.localUsers.length+1)};S.localUsers.push(u);switchLocal(u.id)},
   // ---- account
@@ -431,11 +467,13 @@ async function saveRound(how){
   if(d.isNew&&S.rounds.some(r=>r.n===n))return err(`La giornata ${n} esiste già`);
   const teams=d.matches.flatMap(m=>[m.home,m.away]).filter(Boolean);
   if(new Set(teams).size!==teams.length)return err("Una squadra compare in più partite");
-  const matches=d.matches.map(m=>({id:m.id,home:m.home||"",away:m.away||"",kickoff:m.kickoff||"",o1:num(m.o1),oX:num(m.oX),o2:num(m.o2),hg:int(m.hg),ag:int(m.ag)}));
+  const matches=d.matches.map(m=>({id:m.id,fixtureId:m.fixtureId||null,home:m.home||"",away:m.away||"",kickoff:m.kickoff||"",o1:num(m.o1),oX:num(m.oX),o2:num(m.o2),hg:int(m.hg),ag:int(m.ag)}));
   for(const m of matches){if((m.hg==null)!==(m.ag==null))return err(`Risultato incompleto in ${m.home||"?"}–${m.away||"?"}`);
     for(const k of["o1","oX","o2"])if(m[k]!=null&&m[k]<=1)return err(`Le quote devono essere maggiori di 1 (${m.home}–${m.away})`)}
   const body={n,matches,published:!!d.published,lockedAt:d.lockedAt||null};
-  if(how==="publish"){if(!oddsComplete(body)||matches.some(m=>!m.kickoff))return err("Per pubblicare servono 10 partite con squadre, orari e quote");body.published=true}
+  if(how==="publish"){
+    if(matches.some(m=>m.fixtureId&&!m.kickoff))return err(S.siteAdmin?"Alcune partite non hanno ancora l'orario: inseriscilo nel Calendario Serie A, poi pubblica.":"Alcune partite non hanno ancora l'orario ufficiale: si potrà pubblicare quando il gestore del calendario lo inserisce.");
+    if(!oddsComplete(body)||matches.some(m=>!m.kickoff))return err("Per pubblicare servono 10 partite con squadre, orari e quote");body.published=true}
   if(how==="lock")body.lockedAt=Date.now();
   if(how==="unlock")body.lockedAt=null;
   const existing=d.isNew?null:S.rounds.find(r=>r._id===S.editRid);
@@ -456,6 +494,8 @@ app.addEventListener("input",e=>{const t=e.target;if(t.dataset.bind){setPath(S,t
 app.addEventListener("change",e=>{const t=e.target;
   if(t.id==="who-sel")return switchLocal(t.value);
   if(t.id==="league-sel"){selectLeague(t.value);return}
+  if(t.id==="ed-n"&&S.draft&&S.draft.isNew){S.draft.n=t.value;const cal=calendarDraft(+t.value);if(cal.length===10)S.draft.matches=cal;render();return}
+  if(t.id==="cal-n"){S.calN=+t.value;S.calEdit={};render();return}
   if(t.id==="cf-logo"&&t.files[0]){const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement("canvas");c.width=c.height=128;const x=c.getContext("2d");const s=Math.min(img.width,img.height);x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,128,128);S.form.logo=c.toDataURL("image/jpeg",.85);render()};img.src=fr.result};fr.readAsDataURL(t.files[0])}
 });
 app.addEventListener("submit",e=>{e.preventDefault();const f=e.target.closest("form[data-submit]");if(f&&ACT[f.dataset.submit])ACT[f.dataset.submit]({})});
@@ -477,15 +517,16 @@ function render(){
   const L=league();
   const needLogin=ONLINE&&S.authReady&&!S.uid;
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
-  const title=S.screen==="create"?"Crea una lega":"TotoFanta";
+  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":"TotoFanta";
   const bare=needLogin||recovery||S.boot||!S.authReady;
-  const leftBtn=bare?"<span></span>":(S.screen==="create"||S.screen==="leghe"?`<button class="iconbtn" data-act="go" data-s="home" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
+  const leftBtn=bare?"<span></span>":(S.screen==="create"||S.screen==="leghe"||S.screen==="calendario"?`<button class="iconbtn" data-act="go" data-s="home" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
   else if(needLogin)body=vLogin();
   else if(recovery)body=vNewPw();
   else if(S.screen==="create")body=vCreate();
   else if(S.screen==="leghe")body=vMyLeagues();
+  else if(S.screen==="calendario")body=vCalendar();
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
@@ -514,7 +555,7 @@ function vDrawer(){
   <div class="head">${who}</div>
   <nav>
    <div class="grp">Generali</div>
-   <button class="dl" data-act="newLeague">Crea una lega</button><button class="dl" data-act="joinModal">Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">Le mie leghe</button>
+   <button class="dl" data-act="newLeague">Crea una lega</button><button class="dl" data-act="joinModal">Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">Le mie leghe</button><button class="dl" data-act="openCal">Calendario Serie A${S.siteAdmin&&ONLINE?" · gestore":""}</button>
    ${L?`<div class="grp">Lega</div><button class="dl" data-act="go" data-s="lega">Regolamento lega</button><button class="dl" data-act="go" data-s="lega">Invita alla tua lega</button>`:""}
    ${admin?`<div class="grp">Opzioni admin</div><button class="dl" data-act="go" data-s="admin">Gestisci giornate</button><button class="dl" data-act="go" data-s="lega">Richieste di accesso${pend?` (${pend})`:""}</button><button class="dl danger" data-act="delLeague">Elimina lega</button>`:""}
   </nav></aside>`;
@@ -695,6 +736,24 @@ function vInfo(L){
   ${admin&&S.confirm==="delLeague"?`<section class="card"><h3>Eliminare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Spariscono giornate, schedine e classifica per tutti i partecipanti. Non si può annullare.</p><div class="row"><button class="btn danger" data-act="delLeague">Elimina definitivamente</button><button class="btn sec" data-act="go" data-s="lega">Annulla</button></div></section>`:""}`;
 }
 
+/* ---- Calendario Serie A (unico per tutte le leghe) ---- */
+function vCalendar(){
+  let html=`<h2 class="pagetitle">Calendario Serie A 2026/27</h2>`;
+  if(!S.fixtures.length)return html+`<section class="card"><div class="empty">${ONLINE?"Il calendario non è ancora stato caricato nel database.":"Calendario non disponibile."}</div></section>`;
+  const n=S.calN||(S.calN=nextCalendarRound());const fs=fixturesOf(n);const ed=S.siteAdmin;
+  html+=`<div class="row calnav"><button class="btn sm sec" data-act="calStep" data-d="-1" ${n<=1?"disabled":""} aria-label="Giornata precedente">‹</button>
+   <select id="cal-n" aria-label="Giornata">${Array.from({length:38},(_,i)=>`<option value="${i+1}"${i+1===n?" selected":""}>${i+1}ª giornata</option>`).join("")}</select>
+   <button class="btn sm sec" data-act="calStep" data-d="1" ${n>=38?"disabled":""} aria-label="Giornata successiva">›</button></div>`;
+  if(ed)html+=`<p class="tip">${ONLINE?"Sei gestore del calendario: date e orari che salvi qui valgono subito per tutte le leghe.":"Modalità prova: qui puoi provare a cambiare gli orari come farà il gestore."}</p>`;
+  html+=`<section class="card"><div class="list">${fs.map(f=>{
+    const when=f.kickoff?`${fmtDow(f.kickoff)} · ${fmtTime(f.kickoff)}`:`<span class="muted">Orario da definire · indicativa ${f.day?fmtDow(f.day):"—"}</span>`;
+    return `<div class="cal-m"><div class="t">${crest(f.home)}<span>${esc(f.home)}</span><span class="muted">–</span><span>${esc(f.away)}</span>${crest(f.away)}</div>
+     ${ed?`<input type="datetime-local" id="cal-k${f.id}" data-bind="calEdit.${f.id}" value="${esc(f.id in S.calEdit?S.calEdit[f.id]:toInput(f.kickoff))}" aria-label="Calcio d'inizio ${esc(f.home)}–${esc(f.away)}">${f.kickoff?"":`<span class="small muted">indicativa ${f.day?fmtDow(f.day):"—"}</span>`}`:`<div class="w">${when}</div>`}</div>`}).join("")}</div>
+   ${ed?`<div class="row"><button class="btn sm" data-act="saveCal" ${S.busy?"disabled":""}>Salva orari</button><button class="btn sm ghost" data-act="calUndo">Annulla modifiche</button></div>`:""}
+   <p class="small muted" style="font-family:var(--f-ui)">Gli accoppiamenti sono quelli ufficiali; date e orari sono provvisori e vengono aggiornati man mano.</p></section>`;
+  return html;
+}
+
 /* ---- Crea una lega (4.1) ---- */
 function vCreate(){
   const f=S.form;
@@ -737,17 +796,21 @@ function vEditor(L){
   const d=S.draft;const saved=S.rounds.find(r=>r._id===S.editRid);
   const vis=saved?roundVisible(saved,L):false;const ap=saved?autoPublishAt(saved,L):null;
   const lockedAll=saved&&saved.matches.length&&saved.matches.every(m=>matchLocked(saved,m));
-  const rows=d.matches.map((m,i)=>`<div class="ed-m"><span class="n">${i+1}</span>${teamSel(`ed-h${i}`,`draft.matches.${i}.home`,m.home,"h")}${teamSel(`ed-a${i}`,`draft.matches.${i}.away`,m.away,"a")}
-   <input class="k" type="datetime-local" id="ed-k${i}" data-bind="draft.matches.${i}.kickoff" value="${esc(m.kickoff)}" aria-label="Calcio d'inizio">
+  const fromCal=d.matches.some(m=>m.fixtureId);
+  const rows=d.matches.map((m,i)=>`<div class="ed-m${m.fixtureId?" cal":""}"><span class="n">${i+1}</span>${m.fixtureId
+   ?`<span class="h fx">${crest(m.home)}<span>${esc(m.home)}</span></span><span class="a fx">${crest(m.away)}<span>${esc(m.away)}</span></span><span class="k fx${m.kickoff?"":" tbd"}">${m.kickoff?`${fmtDow(m.kickoff)} · ${fmtTime(m.kickoff)}`:`Orario da definire · ${m.day?fmtDow(m.day):"data da definire"}`}</span>`
+   :`${teamSel(`ed-h${i}`,`draft.matches.${i}.home`,m.home,"h")}${teamSel(`ed-a${i}`,`draft.matches.${i}.away`,m.away,"a")}
+   <input class="k" type="datetime-local" id="ed-k${i}" data-bind="draft.matches.${i}.kickoff" value="${esc(m.kickoff)}" aria-label="Calcio d'inizio">`}
    ${["o1","oX","o2"].map((k,j)=>`<input class="o ${k}" type="text" inputmode="decimal" id="ed-${k}${i}" data-bind="draft.matches.${i}.${k}" value="${esc(m[k])}" placeholder="${["1","X","2"][j]}" aria-label="Quota ${["1","X","2"][j]}">`).join("")}</div>`).join("");
   const resRows=d.matches.map((m,i)=>{const sm=saved&&saved.matches[i];const lk=sm?matchLocked(saved,sm):false;const e=esito({hg:int(m.hg),ag:int(m.ag)});
     return `<div class="ed-res"><span><b>${esc(abbr(m.home))}</b> – <b>${esc(abbr(m.away))}</b></span><input type="number" min="0" id="ed-hg${i}" data-bind="draft.matches.${i}.hg" value="${esc(m.hg)}" ${lk?"":"disabled"} aria-label="Gol casa"><span>-</span><input type="number" min="0" id="ed-ag${i}" data-bind="draft.matches.${i}.ag" value="${esc(m.ag)}" ${lk?"":"disabled"} aria-label="Gol trasferta"><span class="small muted">${lk?(e?"Esito "+e:""):"da giocare"}</span></div>`}).join("");
   return `<div class="row"><button class="btn ghost sm" data-act="closeEditor">‹ Giornate</button><h2 class="grow">${d.isNew?"Nuova giornata":`${d.n}ª giornata`}</h2>${saved?`<span class="chip ${roundStatus(saved,L).c}">${roundStatus(saved,L).t}</span>`:""}</div>
   <section class="card"><h3>1 · Partite e quote</h3>
   ${d.isNew?`<label class="small" for="ed-n" style="font-family:var(--f-ui)">Numero giornata</label><select id="ed-n" data-bind="draft.n" style="max-width:200px">${Array.from({length:38},(_,i)=>i+1).filter(n=>n>=L.startRound&&!S.rounds.some(r=>r.n===n)).map(n=>`<option value="${n}"${+d.n===n?" selected":""}>${n}ª</option>`).join("")}</select>`:""}
-  <div class="row"><button class="btn sm sec" data-act="fillExample">Genera giornata di esempio</button><button class="btn sm sec" data-act="genOdds">Calcola quote indicative</button></div>
+  ${fromCal?`<p class="small muted" style="font-family:var(--f-ui)">Squadre e orari arrivano dal calendario Serie A e si aggiornano da soli${S.siteAdmin?" quando li cambi nel Calendario":""}. Tu inserisci le quote.</p>`:""}
+  <div class="row">${fromCal?"":`<button class="btn sm sec" data-act="fillExample">Genera giornata di esempio</button>`}<button class="btn sm sec" data-act="genOdds">Calcola quote indicative</button>${S.siteAdmin&&fromCal?`<button class="btn sm ghost" data-act="openCal" data-n="${esc(d.n)}">Modifica orari</button>`:""}</div>
   <div>${rows}</div>
-  ${(()=>{const n=d.matches.filter(m=>m.kickoff&&(m.hg===""||m.hg==null)&&+new Date(m.kickoff)<=Date.now()).length;return n?`<p class="banner">${n} partit${n===1?"a ha":"e hanno"} l'orario già passato: per quelle i pronostici sono bloccati. Sposta gli orari nel futuro per farle giocare.</p>`:""})()}
+  ${(()=>{const n=d.matches.filter(m=>m.kickoff&&(m.hg===""||m.hg==null)&&+new Date(m.kickoff)<=Date.now()).length;return n?`<p class="banner">${n} partit${n===1?"a ha":"e hanno"} l'orario già passato: per quelle i pronostici sono bloccati.${fromCal?"":" Sposta gli orari nel futuro per farle giocare."}</p>`:""})()}
   <p class="small muted" style="font-family:var(--f-ui)">${saved?(vis?"Quote visibili ai giocatori.":(ap?`Le quote diventano visibili in automatico il ${fmtFull(ap)}.`:"Inserisci gli orari per programmare la pubblicazione.")):"Salva per programmare la pubblicazione automatica."} I pronostici si chiudono partita per partita al calcio d'inizio.</p>
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
   <div class="row"><button class="btn sm" data-act="saveRound" data-how="save" ${S.busy?"disabled":""}>Salva</button>${!vis?`<button class="btn sm" data-act="saveRound" data-how="publish" ${S.busy?"disabled":""}>Salva e pubblica ora</button>`:""}

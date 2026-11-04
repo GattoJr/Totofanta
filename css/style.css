@@ -197,3 +197,16 @@ tr.me td{background:var(--blue-soft)}
   .ed-m .h,.ed-m .a,.ed-m .k,.ed-m .o1,.ed-m .oX,.ed-m .o2{grid-column:auto}
 }
 @media (prefers-reduced-motion:no-preference){.pk,.btn,.opt,.rchip{transition:background .15s,border-color .15s,color .15s}}
+
+/* ---- Calendario Serie A ---- */
+.ed-m.cal .fx{display:flex;align-items:center;gap:6px;font-family:var(--f-ui);font-size:14px;font-weight:500;min-width:0;overflow:hidden;white-space:nowrap}
+.ed-m.cal .fx span{overflow:hidden;text-overflow:ellipsis}
+.ed-m.cal .k.fx{color:var(--muted);font-size:13px}
+.ed-m.cal .k.tbd{color:var(--warn,#b26a00)}
+.calnav{gap:8px}
+.calnav select{flex:1;min-width:0}
+.cal-m{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 0;border-top:1px solid var(--line)}
+.cal-m:first-child{border-top:0}
+.cal-m .t{display:flex;align-items:center;gap:6px;flex:1 1 220px;min-width:0;font-family:var(--f-ui);font-weight:500;font-size:15px}
+.cal-m .w{font-family:var(--f-ui);font-size:14px}
+.cal-m input{flex:0 1 210px;padding:7px 8px;font-size:14px}
