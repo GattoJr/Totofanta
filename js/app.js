@@ -349,7 +349,7 @@ function buildRounds(L){
   const pub=Object.keys(S.calRounds).map(Number);
   const last=Math.min(38,Math.max(L.startRound,nextCalendarRound(),...pub));const out=[];
   for(let n=L.startRound;n<=last;n++)out.push({_id:"g"+n,n,published:!!S.calRounds[n],matches:fixturesOf(n).map(f=>{const o=S.odds[f.id]||{};
-    return{id:String(f.id),home:f.home,away:f.away,kickoff:f.kickoff||"",o1:o.o1??null,oX:o.oX??null,o2:o.o2??null,hg:f.hg??null,ag:f.ag??null}})});
+    return{id:String(f.id),home:f.home,away:f.away,kickoff:f.kickoff||"",day:f.day||"",o1:o.o1??null,oX:o.oX??null,o2:o.o2??null,hg:f.hg??null,ag:f.ag??null}})});
   return out;
 }
 function adminDefaultRound(){const n=nextCalendarRound(),now=Date.now();const missing=k=>fixturesOf(k).some(f=>f.kickoff&&Date.parse(f.kickoff)<=now&&f.hg==null);return n>1&&!missing(n)&&missing(n-1)?n-1:n}
@@ -676,10 +676,11 @@ function vHome(L){
   let html=leagueSelect();
   if(anyScored)html+=`<section class="card"><div class="stats"><div><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></div><div><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></div><div><b>${mine?mine.played:0}</b><span>Giornate</span></div></div><button class="btn block" data-act="go" data-s="classifica">Classifica</button></section>`;
   html+=`<section class="card">${statusCard(L,r)}</section>`;
-  if(r&&roundVisible(r)){
+  /* le partite si vedono sempre (gli accoppiamenti sono fissi), anche prima che le quote siano pubblicate */
+  if(r&&r.matches.length){
     const upcoming=r.matches.filter(m=>!esito(m));const show=upcoming.length?upcoming:r.matches;
     html+=`<div><div class="sect">${upcoming.length?"Prossimi incontri":"Risultati"}</div><div class="small" style="margin:2px 0 8px">${r.n}° Giornata</div>
-    <div class="next">${show.map(m=>`<div class="mini"><div class="teams">${crest(m.home)}<span>${abbr(m.home)} - ${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:`<span>${fmtDay(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`}</div></div>`).join("")}</div></div>`;
+    <div class="next">${show.map(m=>`<div class="mini"><div class="teams">${crest(m.home)}<span>${abbr(m.home)} - ${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:(m.kickoff?`<span>${fmtDay(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`:`<span>${m.day?fmtDay(m.day):"—"}</span><span>da definire</span>`)}</div></div>`).join("")}</div></div>`;
   }
   return html;
 }
