@@ -9,5 +9,5 @@ window.TOTOFANTA_CONFIG = {
   // ID client OAuth di Google (pubblico, non è il "secret"): Google Cloud › Google Auth Platform › Clients.
   // Se compilato, l'accesso con Google avviene in una finestra di Google che mostra il nome del sito
   // invece dell'indirizzo di Supabase. Se vuoto si usa il vecchio reindirizzamento.
-  googleClientId: ""
+  googleClientId: "262522760154-k38sh7csoj24ql7cj8mp65l91l45br33.apps.googleusercontent.com"
 };
