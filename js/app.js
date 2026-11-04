@@ -135,6 +135,8 @@ const Local={
   },
   async approve(m){await LocalStore.set(`leagues/${S.lid}/members/${m._id}`,{nick:m.nick,status:"approved",bot:!!m.bot,joinedAt:m.joinedAt||Date.now()})},
   async removeMember(m){await LocalStore.del(`leagues/${S.lid}/members/${m._id}`)},
+  async setNickname(nick){const taken=LocalStore.list(`leagues/${S.lid}/members`).some(m=>m._id!==S.uid&&m.nick.toLowerCase()===nick.toLowerCase());if(taken)throw new Error("Nickname già usato in questa lega");
+    const me=LocalStore.list(`leagues/${S.lid}/members`).find(m=>m._id===S.uid);if(!me)throw new Error("Non fai parte di questa lega");const {_id,...doc}=me;await LocalStore.set(`leagues/${S.lid}/members/${S.uid}`,{...doc,nick})},
   async addBot(name){await LocalStore.set(`leagues/${S.lid}/members/bot-${rid(6)}`,{nick:name,status:"approved",bot:true,joinedAt:Date.now()})},
   async botPicks(r,bots){for(const b of bots){const pk={};r.matches.forEach(m=>{if(m.o1)pk[m.id]=sampleEsito(m)});await LocalStore.set(`leagues/${S.lid}/picks/${r._id}~${b._id}`,{uid:b._id,round:r._id,picks:pk,updatedAt:Date.now()})}},
   async deleteLeague(){const lid=S.lid;for(const p of S.picks)await LocalStore.del(`leagues/${lid}/picks/${p._id}`);for(const m of S.members)await LocalStore.del(`leagues/${lid}/members/${m._id}`);await LocalStore.del(`leagues/${lid}`);await this.removeFromMe(lid)},
@@ -258,6 +260,7 @@ const Online={
   },
   async approve(m){this.check(await this.sb.from("members").update({status:"approved"}).eq("id",m.mid));await this.refresh()},
   async removeMember(m){this.check(await this.sb.from("members").delete().eq("id",m.mid));await this.refresh()},
+  async setNickname(nick){this.check(await this.sb.rpc("set_nickname",{p_league:S.lid,p_nickname:nick}));await this.refresh()},
   async addBot(name){this.check(await this.sb.from("members").insert({league_id:S.lid,nickname:name,status:"approved",is_bot:true}));await this.refresh()},
   async botPicks(r,bots){const rows=[];for(const b of bots)for(const m of r.matches)if(m.o1)rows.push({member_id:b.mid,fixture_id:+m.id,pick:sampleEsito(m)});if(rows.length)this.check(await this.sb.from("picks").upsert(rows,{onConflict:"member_id,fixture_id"}));await this.refresh()},
   async deleteLeague(){this.check(await this.sb.from("leagues").delete().eq("id",S.lid));await this.refreshLeagues()},
@@ -308,7 +311,7 @@ function pickDefaultLeague(){
   if(lid!==S.lid)selectLeague(lid);
 }
 function selectLeague(lid){
-  S.lid=lid;S.roundSel=null;S.draft={};S.members=[];S.rounds=[];S.picks=[];S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
+  S.lid=lid;S.roundSel=null;S.draft={};S.nickEdit=null;S.members=[];S.rounds=[];S.picks=[];S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
   if(lid)lsSet("totofanta-last-lid:"+S.uid,lid);
   B.openLeague(lid);render();
 }
@@ -466,6 +469,10 @@ const ACT={
     for(const r of rs){if(!await ACT.savePicks({r:r._id}))return}S.draft={};next&&next()},
   leaveDiscard:()=>{const next=S.leave?.next;S.leave=null;S.draft={};next&&next()},
   leaveStay:()=>{S.leave=null;render()},
+  saveNick:()=>{const me=myMember();const nick=(S.nickEdit??me?.nick??"").trim();
+    if(nick.length<2||nick.length>20)return toast("Il nickname deve avere da 2 a 20 caratteri");
+    if(me&&nick===me.nick)return toast("Il nickname è già questo");
+    safe(async()=>{await B.setNickname(nick);S.nickEdit=null;toast("Nickname aggiornato")})},
   copyLink:async()=>{const L=league();if(!L)return;const url=inviteUrl(L);try{await navigator.clipboard.writeText(url);toast("Link d'invito copiato")}catch{prompt("Copia il link d'invito:",url)}},
   // ---- admin
   approve:d=>safe(async()=>{await B.approve(S.members.find(x=>x._id===d.u));toast("Giocatore approvato")}),
@@ -719,7 +726,7 @@ function vHome(L){
   const done=r&&roundVisible(r)&&!roundLocked(r)&&r.matches.length&&r.matches.every(m=>(pickDoc(r._id,S.uid)?.picks||{})[m.id]);
   html+=`<section class="card${done?" complete":""}">${statusCard(L,r)}</section>`;
   /* riepilogo classifica (2.2): sempre visibile; tutta la card porta alla classifica */
-  html+=`<button type="button" class="card statcard" data-act="go" data-s="classifica" aria-label="Vai alla classifica"><div class="stats"><div><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></div><div><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></div><div><b>${mine&&mine.mp?f2(mine.mp):"0.00"}</b><span>Miglior punteggio</span></div></div><span class="golink">Vai alla classifica ›</span></button>`;
+  html+=`<button type="button" class="card statcard" data-act="go" data-s="classifica" aria-label="Vai alla classifica"><span class="statnick">${esc(myMember()?.nick||"")}</span><div class="stats"><div><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></div><div><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></div><div><b>${mine&&mine.mp?f2(mine.mp):"0.00"}</b><span>Miglior punteggio</span></div></div><span class="golink">Vai alla classifica ›</span></button>`;
   /* le partite si vedono sempre (gli accoppiamenti sono fissi), anche prima che le quote siano pubblicate */
   if(r&&r.matches.length){
     const upcoming=r.matches.filter(m=>!esito(m));const show=upcoming.length?upcoming:r.matches;
@@ -812,6 +819,8 @@ function vInfo(L){
   const admin=isAdmin();const pend=S.members.filter(m=>m.status==="pending");
   return `<div class="row">${logoHtml(L)}<div class="grow"><h2>${esc(L.name)}</h2><div class="small muted">${L.type==="private"?"Privata":"Pubblica"} · Modalità Quote</div></div>${admin?`<button class="btn sm" data-act="go" data-s="admin">Admin</button>`:""}</div>
   ${admin&&pend.length?`<section class="card"><h3>Richieste di accesso</h3><div class="list">${pend.map(m=>`<div class="row"><span class="grow"><b>${esc(m.nick)}</b></span><button class="btn sm" data-act="approve" data-u="${m._id}">Approva</button><button class="btn sm sec" data-act="reject" data-u="${m._id}">Rifiuta</button></div>`).join("")}</div></section>`:""}
+  <section class="card"><h3>Il tuo nickname</h3><p class="small muted" style="font-family:var(--f-ui)">È il nome con cui ti vedono gli altri in questa lega.</p>
+   <form class="row" data-submit="saveNick" novalidate><input type="text" id="nick-edit" class="grow" data-bind="nickEdit" value="${esc(S.nickEdit??(myMember()?.nick||""))}" maxlength="20" autocomplete="off" aria-label="Nickname"><button class="btn sm" type="submit" ${S.busy?"disabled":""}>Salva</button></form></section>
   <section class="card"><h3>Invita alla tua lega</h3><p class="small" style="font-family:var(--f-ui)">${L.type==="private"?"Manda il link insieme alla password della lega: chi lo apre trova il nome già inserito e deve solo scrivere la password. In alternativa può usare “Unisciti a una lega” con nome e password.":"Manda il link: chi lo apre trova il nome già inserito ed entra subito. In alternativa può usare “Unisciti a una lega” con il nome."}</p>
    <div class="row"><span class="code">${esc(L.name)}</span><button class="btn sm" data-act="copyLink">Copia link</button></div></section>
   <section class="card"><h3>Regolamento lega</h3><table class="kv"><tbody>

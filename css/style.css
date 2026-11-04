@@ -266,3 +266,4 @@ tr.me td{background:var(--blue-soft)}
 .okmark{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--win);color:#fff;font-size:13px;vertical-align:2px;margin-right:4px}
 /* pronostici: titolo della giornata fisso durante lo scorrimento */
 .pickhead{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--top-h,56px));z-index:8;background:var(--bg);margin-inline:-16px;padding:6px 16px 8px;box-shadow:0 6px 8px -8px rgba(0,0,0,.25)}
+.statcard .statnick{align-self:center;font-family:var(--f-title);font-weight:700;font-size:16px;margin-bottom:-2px}

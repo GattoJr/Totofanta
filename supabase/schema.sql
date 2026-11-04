@@ -398,6 +398,26 @@ language sql stable security definer set search_path = '' as $$
    where s.invite_code = upper(btrim(coalesce(p_code, '')));
 $$;
 
+-- Cambia il proprio nickname in una lega (2–20 caratteri, unico nella lega).
+create or replace function public.set_nickname(p_league uuid, p_nickname text) returns text
+language plpgsql security definer set search_path = '' as $$
+declare v_nick text := btrim(coalesce(p_nickname, ''));
+begin
+  if auth.uid() is null then raise exception 'Devi accedere'; end if;
+  if char_length(v_nick) < 2 or char_length(v_nick) > 20 then raise exception 'Il nickname deve avere da 2 a 20 caratteri'; end if;
+  if not exists (select 1 from public.members m where m.league_id = p_league and m.user_id = auth.uid()) then
+    raise exception 'Non fai parte di questa lega';
+  end if;
+  if exists (select 1 from public.members m where m.league_id = p_league and lower(btrim(m.nickname)) = lower(v_nick)
+             and m.user_id is distinct from auth.uid()) then
+    raise exception 'Nickname già usato in questa lega';
+  end if;
+  update public.members set nickname = v_nick where league_id = p_league and user_id = auth.uid();
+  return v_nick;
+end $$;
+revoke execute on function public.set_nickname(uuid, text) from public, anon;
+grant  execute on function public.set_nickname(uuid, text) to authenticated;
+
 -- Codice d'invito: lo leggono solo gli iscritti approvati.
 create or replace function public.get_invite_code(p_league uuid) returns text
 language sql stable security definer set search_path = '' as $$
