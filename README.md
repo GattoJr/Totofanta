@@ -15,6 +15,7 @@ js/calendario.js      calendario Serie A 2026/27 (usato dalla modalità prova)
 supabase/schema.sql   tabelle, regole di sicurezza (RLS) e funzioni del database
 supabase/calendario-2026-27.sql   le 380 partite della Serie A 2026/27
 supabase/migrazione-02-calendario.sql   aggiunge il calendario a un database creato con la versione 1
+supabase/migrazione-03-risultati.sql    risultati unici per tutte le leghe (dopo la 02)
 supabase/reset.sql    azzera il database (cancella tutto lo schema public)
 ```
 
@@ -23,7 +24,7 @@ supabase/reset.sql    azzera il database (cancella tutto lo schema public)
 1. SQL Editor › New query: incolla `supabase/reset.sql` › Run (solo se il progetto contiene vecchie tabelle).
 2. New query: incolla `supabase/schema.sql` › Run.
 3. New query: incolla `supabase/calendario-2026-27.sql` › Run.
-4. Gestore del calendario (chi può cambiare date e orari per tutte le leghe):
+4. Amministratore del sito (pannello amministratore: orari e risultati per tutte le leghe):
    `insert into public.site_admins select id from auth.users where email = 'TUA-EMAIL';`
 5. Authentication › URL Configuration: Site URL `https://gattojr.github.io/Totofanta/`, e la stessa in Redirect URLs.
 6. Per i test: Authentication › Sign In / Providers › Email › disattiva *Confirm email* (il servizio email gratuito di Supabase invia pochissime mail all'ora).
@@ -33,7 +34,8 @@ Regole principali garantite dal database:
 - le quote sono nascoste finché la giornata non è pubblicata (a mano o all'anticipo scelto);
 - i pronostici si possono cambiare solo prima del calcio d'inizio e quelli degli altri si vedono solo dopo;
 - risultati, giornate e iscrizioni li gestisce solo l'admin della lega;
-- squadre e orari delle partite vengono dal calendario unico: l'admin di lega mette solo le quote, date e orari li cambia solo il gestore del calendario e valgono per tutte le leghe.
+- squadre, orari e risultati vengono dal calendario unico: l'admin di lega mette solo le quote; date, orari e risultati li cambia solo l'amministratore del sito (dal Pannello amministratore) e valgono per tutte le leghe;
+- il risultato si può inserire solo dopo il calcio d'inizio.
 
 ## Provarlo
 
