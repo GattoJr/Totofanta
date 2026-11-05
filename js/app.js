@@ -439,6 +439,9 @@ function buildRounds(L){
   return out;
 }
 function adminDefaultRound(){const n=nextCalendarRound(),now=Date.now();const missing=k=>fixturesOf(k).some(f=>f.kickoff&&Date.parse(f.kickoff)<=now&&f.hg==null);return n>1&&!missing(n)&&missing(n-1)?n-1:n}
+/* giornata già iniziata (fischio d'inizio della sua prima partita): una lega non può partire da lì */
+function calRoundStarted(n){const now=Date.now();return fixturesOf(n).some(f=>f.kickoff&&Date.parse(f.kickoff)<=now)}
+function firstOpenRound(){for(let n=1;n<=38;n++)if(!calRoundStarted(n))return n;return null}
 function nextCalendarRound(){const now=Date.now();for(let n=1;n<=38;n++){const fs=fixturesOf(n);if(fs.some(f=>{const t=f.kickoff?Date.parse(f.kickoff):Date.parse(f.day+"T23:59");return t>=now}))return n}return 38}
 function currentRound(){const list=S.rounds;if(!list.length)return null;return list.find(r=>!roundDone(r)&&(r.published||r.matches.some(m=>!matchLocked(r,m))))||list[list.length-1]}
 
@@ -480,7 +483,7 @@ const ACT={
   drawer:()=>{S.drawer=!S.drawer;render()},
   closeAll:()=>{S.drawer=false;S.modal=null;S.help=null;render()},
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
-  newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?nextCalendarRound():1),nick:"",logo:null};go("create")},
+  newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?(firstOpenRound()||38):1),nick:"",logo:null};go("create")},
   joinModal:()=>{S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="";S.modal="join";S.drawer=false;render()},
   pickLeague:d=>{if(guard(()=>ACT.pickLeague(d)))return;selectLeague(d.lid);go("lega")},
   async create(){
@@ -488,6 +491,7 @@ const ACT={
     if(name.length<3)return err("Inserisci un nome di almeno 3 caratteri per la lega");
     if(f.type==="private"&&(f.pw||"").length<4)return err("Scegli una password di almeno 4 caratteri");
     if(nick.length<2)return err("Scegli il tuo nickname");
+    if(calRoundStarted(+f.start))return err(`La ${f.start}ª giornata è già iniziata: scegli una giornata successiva`);
     S.formErr="";
     await safe(async()=>{const lid=await B.createLeague(f);selectLeague(lid);toast("Lega creata");go("home")});
   },
@@ -864,7 +868,7 @@ function vPicks(L){
     const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(started?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
     return `<section class="card match"><div class="mrow"><div class="minfo"><span class="mdate">${fmtDow(m.kickoff).toUpperCase()} · ${fmtTime(m.kickoff)}</span><span class="mteam">${dot(m.home)}<span>${esc(m.home)}</span>${e?`<b class="mgoal">${m.hg}</b>`:""}</span><span class="mteam">${dot(m.away)}<span>${esc(m.away)}</span>${e?`<b class="mgoal">${m.ag}</b>`:""}</span></div>${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
-  html+=`<section class="card"><div class="summary"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div><div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div></div>
+  html+=`<section class="card"><div class="summary${roundLocked(r)?"":" one"}"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div>${roundLocked(r)?`<div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div>`:""}</div>
   <p class="center small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
   if(anyOpen)html+=`<div class="savebar"><span class="small">${dirty?"Modifiche da salvare":"Nessuna modifica da salvare"}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":"Salva"}</button></div>`;
   html+=vOthers(r);
@@ -1025,7 +1029,7 @@ function vCreate(){
    ${opt("cf-type","cf-type-pr","private","form.type","Privata",f.type==="private",1)}${opt("cf-type","cf-type-pu","public","form.type","Pubblica",f.type==="public",1)}</div></section>
   ${f.type==="private"?`<section class="card"><div class="q">Scegli una password per la tua lega:</div><input type="text" id="cf-pw" data-bind="form.pw" value="${esc(f.pw)}" maxlength="30" autocomplete="off" placeholder="Almeno 4 caratteri"></section>`:""}
   <section class="card"><div class="q">Criterio di spareggio</div><div class="tiebox"><p><b>1.</b> A pari punti è più in alto chi ha il <b>Miglior punteggio di giornata (MP)</b>: i punti più alti fatti in una singola giornata.</p><p><b>2.</b> Se anche l'MP è uguale, conta la <b>Miglior quota (MQ)</b>: la quota più alta indovinata con un singolo pronostico.</p><p><b>3.</b> Se MP e MQ sono uguali, i giocatori condividono la posizione (es. due secondi posti) e chi segue scala di conseguenza.</p></div></section>
-  <section class="card"><div class="q">Giornata di inizio della lega:</div><select id="cf-start" data-bind="form.start">${Array.from({length:38},(_,i)=>`<option value="${i+1}"${+f.start===i+1?" selected":""}>${i+1}° Giornata</option>`).join("")}</select></section>
+  <section class="card"><div class="q">Giornata di inizio della lega:</div>${firstOpenRound()?`<select id="cf-start" data-bind="form.start">${Array.from({length:38},(_,i)=>i+1).filter(n=>!calRoundStarted(n)).map(n=>`<option value="${n}"${+f.start===n?" selected":""}>${n}° Giornata</option>`).join("")}</select><p class="small muted" style="font-family:var(--f-ui)">Si può partire solo da una giornata non ancora iniziata.</p>`:`<p class="small" style="font-family:var(--f-ui)">Il campionato è finito: non ci sono giornate da cui partire.</p>`}</section>
   <section class="card"><div class="q">Il tuo nickname:</div><input type="text" id="cf-nick" data-bind="form.nick" value="${esc(f.nick)}" maxlength="20" placeholder="Come ti vedranno gli altri"></section>
   <section class="card">${S.formErr?`<p class="err center">${esc(S.formErr)}</p>`:""}<button class="btn wide" data-act="create" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Crea lega"}</button></section>`;
 }

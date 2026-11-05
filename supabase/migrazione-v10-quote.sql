@@ -92,3 +92,6 @@ select cron.schedule('sync-quote-tick', '*/5 * * * *', $$ select private.odds_ti
 
 alter publication supabase_realtime add table public.odds_alerts;
 revoke execute on function public.odds_freeze() from public, anon, authenticated;
+
+-- v11 (5/11): create_league rifiuta una giornata di inizio già iniziata
+-- (aggiunto in create_league: if exists fixture della giornata con kickoff <= now() → errore)
