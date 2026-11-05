@@ -546,3 +546,15 @@ td.n,th.n{padding-inline:6px}
 .nickrow{padding:8px 0;border-top:1px solid var(--line)}
 .list .nickrow:first-child{border-top:0}
 .nickrow .lg{overflow-wrap:anywhere}
+/* menu delle leghe nel menu laterale (al posto del menu a tendina di sistema) */
+.lsbox{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align:left}
+.lswitch svg{transition:transform .15s}
+.lsbox.open .lswitch svg{transform:rotate(180deg)}
+.lsmenu{background:var(--card);border-radius:12px;padding:6px;box-shadow:0 10px 24px rgba(5,15,40,.28);display:flex;flex-direction:column;gap:2px}
+.lsitem{display:flex;align-items:center;gap:10px;background:none;border:0;border-radius:8px;padding:8px;font:600 15px var(--f-ui);color:var(--ink);text-align:left;cursor:pointer;width:100%}
+.lsitem:hover,.lsitem:focus-visible{background:var(--field);outline:none}
+.lsitem.cur{background:var(--blue-soft);color:var(--blue-text)}
+.lsitem .logo{width:30px;height:30px;font-size:14px;border-radius:8px;flex:none}
+.lsitem .grow{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lsitem svg{width:18px;height:18px;flex:none}

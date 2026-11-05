@@ -510,7 +510,9 @@ function err(m){S.formErr=m;render()}
 
 const ACT={
   go:d=>go(d.s),
-  drawer:()=>{S.drawer=!S.drawer;render()},
+  drawer:()=>{S.drawer=!S.drawer;S.lsOpen=false;render()},
+  lsToggle:()=>{S.lsOpen=!S.lsOpen;render()},
+  lsPick:d=>{S.lsOpen=false;if(d.lid===S.lid){render();return}if(guard(()=>ACT.lsPick(d)))return;selectLeague(d.lid);go("home");toast(`Lega: ${league()?.name||""}`)},
   closeAll:()=>{S.drawer=false;S.modal=null;S.help=null;render()},
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
   newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?(firstOpenRound()||38):1),nick:"",logo:null};go("create")},
@@ -760,7 +762,9 @@ function vDrawer(){
   const mine=myLeagues();
   /* cambio lega (solo con più leghe): un menu a tendina nella parte blu */
   /* riquadro della lega sempre visibile; con più leghe ha la freccia e apre il menu a tendina */
-  const sw=L?(mine.length>1?`<label class="lswitch"><span class="lsl">Lega</span><span class="lsn">${esc(L.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><select id="league-sel" aria-label="Cambia lega">${mine.map(x=>`<option value="${x._id}"${x._id===S.lid?" selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`
+  const open=!!S.lsOpen;
+  const sw=L?(mine.length>1?`<div class="lsbox${open?" open":""}"><button type="button" class="lswitch" data-act="lsToggle" aria-expanded="${open}" aria-haspopup="listbox"><span class="lsl">Lega</span><span class="lsn">${esc(L.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+    ${open?`<div class="lsmenu" role="listbox" aria-label="Scegli la lega">${mine.map(x=>`<button type="button" class="lsitem${x._id===S.lid?" cur":""}" role="option" aria-selected="${x._id===S.lid}" data-act="lsPick" data-lid="${x._id}">${logoHtml(x)}<span class="grow">${esc(x.name)}</span>${x._id===S.lid?`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>`:""}</button>`).join("")}</div>`:""}</div>`
     :`<div class="lswitch single"><span class="lsl">Lega</span><span class="lsn">${esc(L.name)}</span></div>`):"";
   return `<div class="scrim" data-act="closeAll"></div><aside class="drawer" aria-label="Menu">
   <div class="head">${who}${ONLINE?`<button class="logoutbtn" data-act="logout">${I.logout}Logout</button>`:""}${sw}</div>
