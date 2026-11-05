@@ -37,3 +37,6 @@ select cron.unschedule('sync-calendario-mattina') where exists (select 1 from cr
 select cron.unschedule('sync-risultati-orario')  where exists (select 1 from cron.job where jobname = 'sync-risultati-orario');
 select cron.unschedule('sync-risultati-tick')    where exists (select 1 from cron.job where jobname = 'sync-risultati-tick');
 select cron.schedule('sync-risultati-tick', '*/5 * * * *', $$ select private.results_tick() $$);
+
+-- v13 (5/11): nome lega da 3 a 24 caratteri
+alter table public.leagues add constraint leagues_name_len check (char_length(btrim(name)) between 3 and 24);

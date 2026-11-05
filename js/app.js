@@ -491,6 +491,7 @@ const ACT={
   async create(){
     const f=S.form;const name=(f.name||"").trim();const nick=(f.nick||"").trim();
     if(name.length<3)return err("Inserisci un nome di almeno 3 caratteri per la lega");
+    if(name.length>24)return err("Il nome della lega può avere al massimo 24 caratteri");
     if(f.type==="private"&&(f.pw||"").length<4)return err("Scegli una password di almeno 4 caratteri");
     if(nick.length<2)return err("Scegli il tuo nickname");
     if(calRoundStarted(+f.start))return err(`La ${f.start}ª giornata è già iniziata: scegli una giornata successiva`);
@@ -899,7 +900,7 @@ function vStandings(L){
     :rows.map(r=>({nick:r.nick,uid:r.uid,pts:r.total,pos:r.pos}));
   if(dayR)podList.forEach((d,i)=>{const p=podList[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
   const podium=scored.length&&podList.length>=2?`<div class="podium">${[1,0,2].filter(i=>podList[i]).map(i=>{const x=podList[i];return `<div class="pod p${i+1}${x.uid===S.uid?" me":""}"><span class="pav">${esc((x.nick.trim()[0]||"?").toUpperCase())}</span><span class="pnick">${esc(x.nick)}</span><span class="ppts">${f2(x.pts)}</span><span class="pbase">${x.pos}</span></div>`}).join("")}</div>`:"";
-  let html=`<section class="rkhero"><span class="eyebrow">Classifica${dayR?` · ${dayR.n}ª giornata`:""}</span><h2 class="disp rkname">${esc(L.name)}</h2>${podium}</section>`;
+  let html=`<section class="rkhero"><span class="eyebrow">Classifica${dayR?` · ${dayR.n}ª giornata`:""}</span><h2 class="disp rkname${L.name.length>16?" long":""}">${esc(L.name)}</h2>${podium}</section>`;
   if(scored.length)html+=`<div class="rounds" role="group" aria-label="Tipo di classifica"><button class="rchip" aria-pressed="${S.rankView==="gen"}" data-act="rank" data-v="gen">Generale</button>${scored.map(r=>`<button class="rchip" aria-pressed="${S.rankView==="g"+r.n}" data-act="rank" data-v="g${r.n}">${r.n}ª giornata</button>`).join("")}</div>`;
   const v=(x)=>x?f2(x):"–";
   if(!scored.length||S.rankView==="gen"){
@@ -1028,7 +1029,7 @@ function vCreate(){
   const f=S.form;
   const opt=(name,id,val,bind,label,checked,rer)=>`<label class="opt"><input type="radio" name="${name}" id="${id}" value="${val}" data-bind="${bind}" ${rer?"data-rerender":""} ${checked?"checked":""}>${label}</label>`;
   return `
-  <section class="card"><div class="q">Inserisci il nome della tua lega:</div><input type="text" id="cf-name" data-bind="form.name" value="${esc(f.name)}" maxlength="40" placeholder="Es. Lega del Bar Sport">
+  <section class="card"><div class="q">Inserisci il nome della tua lega:</div><input type="text" id="cf-name" data-bind="form.name" value="${esc(f.name)}" maxlength="24" placeholder="Es. Lega del Bar Sport">
    <div class="row">${f.logo?`<div class="logo"><img src="${f.logo}" alt=""></div>`:""}<label class="small grow" style="font-family:var(--f-ui)">Logo (facoltativo) <input type="file" id="cf-logo" accept="image/*"></label></div></section>
   <section class="card"><div class="q">Accessibilità lega:<button class="help" data-act="help" data-k="access" aria-label="Spiegazione">?</button></div><div class="opts">
    ${opt("cf-type","cf-type-pr","private","form.type","Privata",f.type==="private",1)}${opt("cf-type","cf-type-pu","public","form.type","Pubblica",f.type==="public",1)}</div></section>

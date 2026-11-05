@@ -486,3 +486,6 @@ td.n,th.n{padding-inline:6px}
 .logoutbtn svg{width:14px;height:14px}
 .summary.one{grid-template-columns:1fr}
 .confirmrow{background:var(--lose-soft);border-radius:8px;padding:10px 12px;margin:4px 0 8px;display:flex;flex-direction:column;gap:8px}
+.rkhero .rkname:last-child{margin-bottom:18px}
+.rkname{overflow-wrap:break-word}
+.rkname.long{font-size:32px}
