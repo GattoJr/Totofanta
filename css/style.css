@@ -489,3 +489,4 @@ td.n,th.n{padding-inline:6px}
 .rkhero .rkname:last-child{margin-bottom:18px}
 .rkname{overflow-wrap:break-word}
 .rkname.long{font-size:32px}
+.summary.two{grid-template-columns:1fr 1fr}
