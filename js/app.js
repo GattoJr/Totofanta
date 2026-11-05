@@ -21,6 +21,8 @@ const HELP={
 
 /* ===================== Configurazione ===================== */
 const CFG=window.TOTOFANTA_CONFIG||{};
+/* accesso e registrazione con email e password: nascosti per ora (si riattivano con emailLogin:true in config.js) */
+const EMAIL_LOGIN=CFG.emailLogin===true;
 const WANT_ONLINE=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey);
 const ONLINE=WANT_ONLINE&&!!(window.supabase&&window.supabase.createClient);
 /* pagina separata del pannello amministratore (admin.html): nessun collegamento dal sito */
@@ -548,7 +550,9 @@ const ACT={
   reject:d=>safe(async()=>{await B.removeMember(S.members.find(x=>x._id===d.u));toast("Richiesta rifiutata")}),
   addBot:()=>safe(async()=>{const used=new Set(S.members.map(m=>m.nick.toLowerCase()));const name=BOT_NAMES.find(n=>!used.has(n.toLowerCase()))||("Bot "+rid(3));await B.addBot(name);toast(`${name} aggiunto`)}),
   botPicks:d=>safe(async()=>{const r=S.rounds.find(x=>x._id===d.r);const bots=S.members.filter(m=>m.bot);if(!bots.length)return toast("Aggiungi prima un giocatore di prova");await B.botPicks(r,bots);toast("Schedine casuali inserite")}),
-  removeMember:d=>{if(S.confirm!=="rm-"+d.u){S.confirm="rm-"+d.u;return render()}safe(async()=>{await B.removeMember(S.members.find(x=>x._id===d.u));S.confirm=null;toast("Giocatore rimosso")})},
+  removeMember:d=>{S.confirm="rm-"+d.u;render()},
+  removeMemberNo:()=>{S.confirm=null;render()},
+  removeMemberOk:d=>{if(!isAdmin())return;const m=S.members.find(x=>x._id===d.u);if(!m)return;safe(async()=>{await B.removeMember(m);S.confirm=null;toast(`${m.nick} rimosso dalla lega`)})},
   delLeagueNo:()=>{S.confirm=null;render()},
   delLeague:()=>{if(S.confirm!=="delLeague"){S.confirm="delLeague";S.drawer=false;S.screen="lega";return render()}
     safe(async()=>{await B.deleteLeague();S.confirm=null;selectLeague(null);pickDefaultLeague();toast("Lega eliminata");go("home")})},
@@ -728,17 +732,18 @@ function vHelp(){return `<div class="scrim" data-act="closeAll"></div><div class
 function vLogin(){
   const f=S.authForm;const up=f.mode==="signup";
   return `<form class="card" data-submit="login" novalidate>
-   <h2 class="center">${up?"Crea il tuo account":"Login"}</h2>
+   <h2 class="center">${up&&EMAIL_LOGIN?"Crea il tuo account":"Login"}</h2>
    ${CFG.googleClientId&&!S.gsiFallback?`<div id="gsi-btn" class="gsi"></div>`:`<button class="btn block gbtn" type="button" data-act="google" ${S.busy?"disabled":""}><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.3 5.7c4.3-3.9 7-9.8 7-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.3-5.7c-2.2 1.5-5 2.3-8.6 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>Continua con Google</button>`}
-   <div class="sep"><span>oppure con email</span></div>
+   ${EMAIL_LOGIN?`<div class="sep"><span>oppure con email</span></div>`:""}
    ${S.authMsg?`<p class="tip">${esc(S.authMsg)}</p>`:""}
+   ${EMAIL_LOGIN?`
    <input type="email" id="au-email" data-bind="authForm.email" value="${esc(f.email)}" placeholder="Email" autocomplete="email" inputmode="email" style="background:var(--field)">
    <input type="password" id="au-pw" data-bind="authForm.pw" value="${esc(f.pw)}" placeholder="Password${up?" (almeno 6 caratteri)":""}" autocomplete="${up?"new-password":"current-password"}">
    ${up?`<input type="password" id="au-pw2" data-bind="authForm.pw2" value="${esc(f.pw2)}" placeholder="Ripeti la password" autocomplete="new-password">`:""}
    ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
    <button class="btn block" type="submit" ${S.busy?"disabled":""}>${S.busy?"Attendi…":up?"Registrati":"Accedi"}</button>
    ${ADMIN_PAGE?"":up?`<button class="btn ghost" type="button" data-act="authMode" data-m="login">Hai già un account? Accedi</button>`
-       :`<button class="btn ghost" type="button" data-act="authMode" data-m="signup">Non hai un account? Registrati</button><button class="btn ghost sm" type="button" data-act="forgot">Password dimenticata?</button>`}
+       :`<button class="btn ghost" type="button" data-act="authMode" data-m="signup">Non hai un account? Registrati</button><button class="btn ghost sm" type="button" data-act="forgot">Password dimenticata?</button>`}`:`${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}<p class="center small muted" style="font-family:var(--f-ui)">Accedi con il tuo account Google: se è la prima volta, l'account Totofanta si crea in automatico.</p>`}
   </form>
   ${S.modal==="join"?`<p class="center small muted" style="font-family:var(--f-ui)">Dopo l'accesso potrai entrare nella lega <b>${esc(S.form.name||"")}</b>.</p>`:""}
   <p class="center small muted" style="font-family:var(--f-ui)">Accedendo accetti i <a href="termini.html">Termini</a> e l'<a href="privacy.html">informativa sulla privacy</a>.</p>`;
@@ -927,7 +932,7 @@ function vInfo(L){
    <tr><td>Durata</td><td>Dalla ${L.startRound}ª alla 38ª giornata</td></tr>
    <tr><td>Quote</td><td>Aggiornate in automatico fino al fischio d'inizio della prima partita della giornata, poi fisse</td></tr></tbody></table>
    <ol class="rules"><li>Ogni giornata si pronostica l'esito 1, X o 2 delle 10 partite.</li><li>Pronostico giusto = punti pari alla quota. Sbagliato o mancante = 0.</li><li>Si può cambiare fino al fischio d'inizio della prima partita della giornata.</li><li>Vince chi ha più punti all'ultima giornata.</li></ol></section>
-  <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m.bot?` <span class="chip">prova</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ${S.confirm==="rm-"+m._id?"danger":"ghost"}" data-act="removeMember" data-u="${m._id}">${S.confirm==="rm-"+m._id?"Conferma":"Rimuovi"}</button>`:""}</div>`).join("")}</div></section>
+  <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m.bot?` <span class="chip">prova</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ghost" data-act="removeMember" data-u="${m._id}">Rimuovi</button>`:""}</div>${admin&&S.confirm==="rm-"+m._id?`<div class="confirmrow"><p class="small" style="font-family:var(--f-ui)">Rimuovere <b>${esc(m.nick)}</b> dalla lega? Verranno eliminate anche le sue schedine e uscirà dalla classifica. Non si può annullare.</p><div class="row"><button class="btn sm danger" data-act="removeMemberOk" data-u="${m._id}">Rimuovi</button><button class="btn sm sec" data-act="removeMemberNo">Annulla</button></div></div>`:""}`).join("")}</div></section>
   ${!admin?"":S.confirm==="delLeague"?`<section class="card" id="del-league"><h3>Eliminare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Verranno eliminate giornate, schedine e classifica per tutti i partecipanti. Non si può annullare.</p><div class="row"><button class="btn danger" data-act="delLeague">Elimina definitivamente</button><button class="btn sec" data-act="delLeagueNo">Annulla</button></div></section>`:`<section class="card"><button class="btn wide danger" data-act="delLeague">Elimina lega</button><p class="small muted center" style="font-family:var(--f-ui)">Solo tu, come admin della lega, vedi questo pulsante.</p></section>`}`;
 }
 
