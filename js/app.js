@@ -23,6 +23,8 @@ const HELP={
 const CFG=window.TOTOFANTA_CONFIG||{};
 /* accesso e registrazione con email e password: nascosti per ora (si riattivano con emailLogin:true in config.js) */
 const EMAIL_LOGIN=CFG.emailLogin===true;
+/* logo della lega in "Crea lega": nascosto per ora (si riattiva con leagueLogo:true in config.js) */
+const SHOW_LOGO=CFG.leagueLogo===true;
 const WANT_ONLINE=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey);
 const ONLINE=WANT_ONLINE&&!!(window.supabase&&window.supabase.createClient);
 /* pagina separata del pannello amministratore (admin.html): nessun collegamento dal sito */
@@ -1071,7 +1073,7 @@ function vCreate(){
   const opt=(name,id,val,bind,label,checked,rer)=>`<label class="opt"><input type="radio" name="${name}" id="${id}" value="${val}" data-bind="${bind}" ${rer?"data-rerender":""} ${checked?"checked":""}>${label}</label>`;
   return `
   <section class="card"><div class="q">Inserisci il nome della tua lega:</div><input type="text" id="cf-name" data-bind="form.name" value="${esc(f.name)}" maxlength="24" placeholder="Es. Lega del Bar Sport">
-   <div class="row">${f.logo?`<div class="logo"><img src="${f.logo}" alt=""></div>`:""}<label class="small grow" style="font-family:var(--f-ui)">Logo (facoltativo) <input type="file" id="cf-logo" accept="image/*"></label></div></section>
+   ${SHOW_LOGO?`<div class="row">${f.logo?`<div class="logo"><img src="${f.logo}" alt=""></div>`:""}<label class="small grow" style="font-family:var(--f-ui)">Logo (facoltativo) <input type="file" id="cf-logo" accept="image/*"></label></div>`:""}</section>
   <section class="card"><div class="q">Accessibilità lega:<button class="help" data-act="help" data-k="access" aria-label="Spiegazione">?</button></div><div class="opts">
    ${opt("cf-type","cf-type-pr","private","form.type","Privata",f.type==="private",1)}${opt("cf-type","cf-type-pu","public","form.type","Pubblica",f.type==="public",1)}</div></section>
   ${f.type==="private"?`<section class="card"><div class="q">Scegli una password per la tua lega:</div><input type="text" id="cf-pw" data-bind="form.pw" value="${esc(f.pw)}" maxlength="30" autocomplete="off" placeholder="Almeno 4 caratteri"></section>`:""}
