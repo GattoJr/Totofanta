@@ -42,17 +42,15 @@ create table public.league_secrets (
   invite_code   text not null unique
 );
 
--- Partecipanti. I "giocatori di prova" (bot) non hanno un utente.
+-- Partecipanti: ogni partecipante è un utente (giocatori di prova rimossi in v16).
 create table public.members (
   id         uuid primary key default gen_random_uuid(),
   league_id  uuid not null references public.leagues (id) on delete cascade,
-  user_id    uuid references auth.users (id) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
   nickname   text not null check (char_length(btrim(nickname)) between 2 and 20),
   status     text not null default 'pending' check (status in ('pending', 'approved')),
-  is_bot     boolean not null default false,
   joined_at  timestamptz not null default now(),
-  constraint members_user_unique unique (league_id, user_id),
-  constraint members_bot_has_no_user check (is_bot = (user_id is null))
+  constraint members_user_unique unique (league_id, user_id)
 );
 create unique index members_nickname_unique on public.members (league_id, lower(btrim(nickname)));
 
@@ -174,13 +172,6 @@ language sql stable security definer set search_path = '' as $$
                  where m.id = mid and m.user_id = auth.uid() and m.status = 'approved');
 $$;
 
--- Questo partecipante è un giocatore di prova di una lega che amministro?
-create or replace function public.admin_of_bot(mid uuid) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.members m join public.leagues l on l.id = m.league_id
-                 where m.id = mid and m.is_bot and l.admin_id = auth.uid());
-$$;
-
 -- ---------------------------------------------------------------------
 -- Trigger
 -- ---------------------------------------------------------------------
@@ -266,9 +257,7 @@ create policy leagues_delete on public.leagues for delete to authenticated
 -- Partecipanti: li vedono gli iscritti approvati; ognuno vede la propria riga.
 create policy members_select on public.members for select to authenticated
   using (public.is_member(league_id) or user_id = auth.uid() or public.is_admin(league_id));
--- L'admin può aggiungere solo giocatori di prova (gli altri entrano con join_league).
-create policy members_insert_bot on public.members for insert to authenticated
-  with check (public.is_admin(league_id) and is_bot and user_id is null);
+-- Nessun inserimento diretto: si entra solo con join_league.
 -- L'admin approva le richieste.
 create policy members_update on public.members for update to authenticated
   using (public.is_admin(league_id)) with check (public.is_admin(league_id));
@@ -305,18 +294,17 @@ revoke insert, delete on public.calendar_rounds from authenticated, anon;
 --  · i propri si vedono sempre;
 --  · quelli degli altri dal fischio d'inizio della prima partita della giornata;
 --  · si scrivono solo prima del fischio d'inizio della prima partita della giornata, a giornata pubblicata;
---  · l'admin della lega può scrivere quelli dei giocatori di prova.
+--  · nessuna eccezione, nemmeno per l'admin della lega (v16).
 create policy picks_select on public.picks for select to authenticated
   using ( public.owns_member(member_id)
-       or (public.is_member(league_id) and public.fixture_locked(fixture_id))
-       or public.admin_of_bot(member_id) );
+       or (public.is_member(league_id) and public.fixture_locked(fixture_id)) );
 create policy picks_insert on public.picks for insert to authenticated
-  with check ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.fixture_open(fixture_id)) );
+  with check ( public.owns_member(member_id) and public.fixture_open(fixture_id) );
 create policy picks_update on public.picks for update to authenticated
-  using      ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.fixture_open(fixture_id)) )
-  with check ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.fixture_open(fixture_id)) );
+  using      ( public.owns_member(member_id) and public.fixture_open(fixture_id) )
+  with check ( public.owns_member(member_id) and public.fixture_open(fixture_id) );
 create policy picks_delete on public.picks for delete to authenticated
-  using ( public.admin_of_bot(member_id) or (public.owns_member(member_id) and public.fixture_open(fixture_id)) );
+  using ( public.owns_member(member_id) and public.fixture_open(fixture_id) );
 
 -- ---------------------------------------------------------------------
 -- Funzioni chiamate dal sito
@@ -470,3 +458,5 @@ create table if not exists public.sync_log (
 );
 alter table public.sync_log enable row level security;
 create policy sync_log_select on public.sync_log for select to authenticated using (public.is_site_admin());
+
+-- v16: league_pick_status senza is_bot, vedi supabase/migrazione-v16-senza-giocatori-prova.sql

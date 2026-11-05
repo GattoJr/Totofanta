@@ -7,7 +7,7 @@ Versione attuale: prototipo con la sola modalità **Quote**.
 ## Come funziona
 
 - Il calendario Serie A 2026/27 (squadre, orari, quote, risultati) è **unico per tutte le leghe** e lo gestisce l'**amministratore del sito** dal Pannello amministratore, che sta su una pagina a parte (`admin.html`) senza collegamenti dal sito.
-- Ogni lega gioca in automatico dalla sua giornata di inizio alla 38ª: l'admin della lega gestisce solo i partecipanti (e i giocatori di prova).
+- Ogni lega gioca in automatico dalla sua giornata di inizio alla 38ª: l'admin della lega gestisce partecipanti, bonus/penalità, password ed eliminazione della lega.
 - Leghe private: si entra con nome della lega + password. Il link d'invito (`#lega=<nome>`) apre la schermata con il nome già inserito. Leghe pubbliche: basta il nome.
 - Le quote di una giornata sono nascoste finché l'amministratore non la pubblica; i pronostici si chiudono al calcio d'inizio di ogni partita.
 

@@ -10,7 +10,6 @@ const TEAMS=["Atalanta","Bologna","Cagliari","Como","Fiorentina","Frosinone","Ge
 const RATING={Inter:88,Napoli:86,Milan:84,Juventus:84,Atalanta:83,Roma:82,Como:81,Lazio:79,Bologna:79,Fiorentina:77,Torino:74,Udinese:73,Genoa:72,Sassuolo:72,Cagliari:71,Parma:71,Lecce:70,Monza:69,Venezia:68,Frosinone:67};
 /* colori sociali per i badge (non sono loghi ufficiali) */
 const COLORS={Atalanta:["#1e71b8","#111"],Bologna:["#a21c26","#1a2f48"],Cagliari:["#a8102c","#002350"],Como:["#1c3f94","#e8eef8"],Fiorentina:["#5b2b82","#e9dff2"],Frosinone:["#ffd400","#0055a4"],Genoa:["#c8102e","#002a5c"],Inter:["#0068a8","#111"],Juventus:["#111","#f2f2f2"],Lazio:["#87d0f0","#0b2240"],Lecce:["#f7d117","#d71920"],Milan:["#d0101b","#111"],Monza:["#e2001a","#f5f5f5"],Napoli:["#12a0d7","#0b3b6e"],Parma:["#ffd200","#1b4b9a"],Roma:["#8e1f2f","#f0bc42"],Sassuolo:["#00a752","#111"],Torino:["#8a1e03","#f2e6dc"],Udinese:["#f2f2f2","#111"],Venezia:["#f26522","#0f5132"]};
-const BOT_NAMES=["Zona Cesarini","Catenaccio","Bomber86","Il Mister","Tiki Taka","Panchinaro","Fuorigioco","Cucchiaio","Var Checking","Contropiede"];
 const TB_TEXT="Miglior punteggio di giornata (MP), poi Miglior quota (MQ)";
 const HELP={
   access:"Privata: si entra con il nome della lega e la password che scegli qui. Il link d'invito apre già la schermata con il nome della lega: basta scrivere la password.\nPubblica: chiunque può entrare con il nome della lega o con il link d'invito, senza password.",
@@ -137,7 +136,7 @@ const Local={
     const cur={...(pickDoc(r._id,S.uid)?.picks||{})};if(p)cur[m.id]=p;else delete cur[m.id];
     await LocalStore.set(`leagues/${S.lid}/picks/${r._id}~${S.uid}`,{uid:S.uid,round:r._id,picks:cur,updatedAt:Date.now()});
   },
-  async approve(m){await LocalStore.set(`leagues/${S.lid}/members/${m._id}`,{nick:m.nick,status:"approved",bot:!!m.bot,joinedAt:m.joinedAt||Date.now()})},
+  async approve(m){await LocalStore.set(`leagues/${S.lid}/members/${m._id}`,{nick:m.nick,status:"approved",joinedAt:m.joinedAt||Date.now()})},
   async removeMember(m){await LocalStore.del(`leagues/${S.lid}/members/${m._id}`)},
   async leaveLeague(){const lid=S.lid;await LocalStore.del(`leagues/${lid}/members/${S.uid}`);await this.removeFromMe(lid)},
   async joinOpen(name){const L=LocalStore.list("leagues").find(l=>l.nameKey===(name||"").trim().toLowerCase());return !L||!calRoundStarted(L.startRound)},
@@ -148,10 +147,8 @@ const Local={
     const me=LocalStore.list(`leagues/${S.lid}/members`).find(m=>m._id===S.uid);if(!me)throw new Error("Non fai parte di questa lega");const {_id,...doc}=me;await LocalStore.set(`leagues/${S.lid}/members/${S.uid}`,{...doc,nick})},
   async addAdjust(){throw new Error("Bonus e penalità sono disponibili solo online")},
   async delAdjust(){throw new Error("Disponibile solo online")},
-  async pickStatus(n){const r=S.rounds.find(x=>x.n===n);return S.members.filter(m=>m.status==="approved").map(m=>({member_id:m._id,nickname:m.nick,is_bot:!!m.bot,picks:Object.keys(pickDoc("g"+n,m._id)?.picks||{}).length}))},
+  async pickStatus(n){const r=S.rounds.find(x=>x.n===n);return S.members.filter(m=>m.status==="approved").map(m=>({member_id:m._id,nickname:m.nick,picks:Object.keys(pickDoc("g"+n,m._id)?.picks||{}).length}))},
   async setLeaguePw(){throw new Error("Disponibile solo online")},
-  async addBot(name){await LocalStore.set(`leagues/${S.lid}/members/bot-${rid(6)}`,{nick:name,status:"approved",bot:true,joinedAt:Date.now()})},
-  async botPicks(r,bots){for(const b of bots){const pk={};r.matches.forEach(m=>{if(m.o1)pk[m.id]=sampleEsito(m)});await LocalStore.set(`leagues/${S.lid}/picks/${r._id}~${b._id}`,{uid:b._id,round:r._id,picks:pk,updatedAt:Date.now()})}},
   async deleteLeague(){const lid=S.lid;for(const p of S.picks)await LocalStore.del(`leagues/${lid}/picks/${p._id}`);for(const m of S.members)await LocalStore.del(`leagues/${lid}/members/${m._id}`);await LocalStore.del(`leagues/${lid}`);await this.removeFromMe(lid)},
   async nameByCode(code){return LocalStore.list("leagues").find(l=>l.inviteCode===(code||"").trim().toUpperCase())?.name||null},
   async leagueType(name){return LocalStore.list("leagues").find(l=>l.nameKey===(name||"").trim().toLowerCase())?.type||null},
@@ -309,7 +306,7 @@ const Online={
     if(pw&&!pw.error)S.leaguePw[lid]=pw.data||"";
     if(seq!==this.loadSeq||S.lid!==lid)return;
     const e=mem.error||pk.error;if(e){console.warn(e);toast("Errore nel caricare la lega: "+itMsg(e));return}
-    S.members=mem.data.map(m=>({_id:m.user_id||m.id,mid:m.id,nick:m.nickname,status:m.status,bot:m.is_bot,joinedAt:Date.parse(m.joined_at)}));
+    S.members=mem.data.map(m=>({_id:m.user_id||m.id,mid:m.id,nick:m.nickname,status:m.status,joinedAt:Date.parse(m.joined_at)}));
     const memberKey={};for(const m of S.members)memberKey[m.mid]=m._id;
     const docs={};
     for(const p of pk.data){const f=fixtureById(p.fixture_id);const k=memberKey[p.member_id];if(!f||!k)continue;const rId="g"+f.n;const id=`${rId}~${k}`;(docs[id]=docs[id]||{_id:id,uid:k,round:rId,picks:{}}).picks[String(p.fixture_id)]=p.pick}
@@ -343,8 +340,6 @@ const Online={
   async setNicknameIn(lid,nick){this.check(await this.sb.rpc("set_nickname",{p_league:lid,p_nickname:nick}));await this.refresh()},
   async myNicknames(){const d=this.check(await this.sb.from("members").select("league_id,nickname").eq("user_id",S.uid));const out={};for(const m of d)out[m.league_id]=m.nickname;return out},
   async deleteAccount(){const {data,error}=await this.sb.functions.invoke("delete-account",{body:{confirm:"ELIMINA"}});if(error){let msg=error.message;try{msg=(await error.context.json()).error||msg}catch{}throw new Error(msg)}if(!data?.ok)throw new Error("Eliminazione non riuscita");await this.sb.auth.signOut()},
-  async addBot(name){this.check(await this.sb.from("members").insert({league_id:S.lid,nickname:name,status:"approved",is_bot:true}));await this.refresh()},
-  async botPicks(r,bots){const rows=[];for(const b of bots)for(const m of r.matches)if(m.o1)rows.push({member_id:b.mid,fixture_id:+m.id,pick:sampleEsito(m)});if(rows.length)this.check(await this.sb.from("picks").upsert(rows,{onConflict:"member_id,fixture_id"}));await this.refresh()},
   async deleteLeague(){this.check(await this.sb.from("leagues").delete().eq("id",S.lid));await this.refreshLeagues()},
   async nameByCode(code){const r=await this.sb.rpc("league_name_by_code",{p_code:(code||"").trim()});return r.error?null:r.data||null},
   async leagueType(name){const r=await this.sb.rpc("league_join_info",{p_name:(name||"").trim()});return r.error?null:r.data||null},
@@ -486,7 +481,7 @@ function currentRound(){const list=S.rounds;if(!list.length)return null;return l
      con punti, MP e MQ uguali la posizione è la stessa e le successive scalano (1, 2, 2, 4) */
 function computeStandings(L,members,rounds,picks){
   const byId={};for(const p of picks)byId[p._id]=p;
-  const rows=members.filter(m=>m.status==="approved").map(m=>({uid:m._id,mid:m.mid,nick:m.nick,bot:!!m.bot,total:0,correct:0,played:0,perRound:{},mp:0,mq:0,adj:0}));
+  const rows=members.filter(m=>m.status==="approved").map(m=>({uid:m._id,mid:m.mid,nick:m.nick,total:0,correct:0,played:0,perRound:{},mp:0,mq:0,adj:0}));
   let anyScored=false;
   /* bonus e penalità dell'admin della lega: cambiano il totale, non MP né MQ */
   for(const a of S.adjust||[]){const row=rows.find(r=>r.mid===a.mid);if(row){row.adj+=a.pts;row.total+=a.pts;anyScored=true}}
@@ -508,7 +503,6 @@ function roundScore(r,uid){const pk=pickDoc(`g${r.n}`,uid)?.picks||{};let pts=0,
 
 /* ===================== Generatori di esempio ===================== */
 function genOdds(h,a){const d=(RATING[h]??72)+4-(RATING[a]??72);let pH=1/(1+Math.exp(-d/7));const pD=0.28-Math.min(0.1,Math.abs(d)/120);pH*=1-pD;const pA=1-pD-pH;const m=1.06;const o=p=>Math.max(1.05,Math.round(100/(p*m))/100);return{o1:o(pH),oX:o(pD),o2:o(pA)}}
-function sampleEsito(m){const w=[1/m.o1,1/m.oX,1/m.o2];const s=w[0]+w[1]+w[2];const x=Math.random()*s;return x<w[0]?"1":x<w[0]+w[1]?"X":"2"}
 function sampleScore(e){const r=n=>Math.floor(Math.random()*n);if(e==="X"){const g=r(3);return[g,g]}const w=1+r(3),l=r(w);return e==="1"?[w,l]:[l,w]}
 /* ===================== Azioni ===================== */
 async function safe(fn){try{S.busy=true;await fn();return true}catch(e){console.warn(e);toast(itMsg(e));return false}finally{S.busy=false;render()}}
@@ -587,8 +581,6 @@ const ACT={
   // ---- admin
   approve:d=>safe(async()=>{await B.approve(S.members.find(x=>x._id===d.u));toast("Giocatore approvato")}),
   reject:d=>safe(async()=>{await B.removeMember(S.members.find(x=>x._id===d.u));toast("Richiesta rifiutata")}),
-  addBot:()=>safe(async()=>{const used=new Set(S.members.map(m=>m.nick.toLowerCase()));const name=BOT_NAMES.find(n=>!used.has(n.toLowerCase()))||("Bot "+rid(3));await B.addBot(name);toast(`${name} aggiunto`)}),
-  botPicks:d=>safe(async()=>{const r=S.rounds.find(x=>x._id===d.r);const bots=S.members.filter(m=>m.bot);if(!bots.length)return toast("Aggiungi prima un giocatore di prova");await B.botPicks(r,bots);toast("Schedine casuali inserite")}),
   removeMember:d=>{S.confirm="rm-"+d.u;render()},
   removeMemberNo:()=>{S.confirm=null;render()},
   removeMemberOk:d=>{if(!isAdmin())return;const m=S.members.find(x=>x._id===d.u);if(!m)return;safe(async()=>{await B.removeMember(m);S.confirm=null;toast(`${m.nick} rimosso dalla lega`)})},
@@ -879,7 +871,7 @@ function vHome(L){
     const upcoming=r.matches.filter(m=>!esito(m));const kt=m=>{const t=Date.parse(m.kickoff||m.day||"");return isNaN(t)?Infinity:t};
     const show=[...r.matches].sort((a,b)=>kt(a)-kt(b)||a.id-b.id);
     html+=`<div class="nextwrap"><div class="nexthead"><span class="disp">${!upcoming.length?"Risultati":upcoming.length<r.matches.length?"Incontri":"Prossimi incontri"}</span><span class="small muted">${r.n}ª giornata</span></div>
-    <div class="next" id="next-bar" data-round="${r.n}">${show.map(m=>`<div class="mini${esito(m)?" done":""}"><div class="teams">${crest(m.home)}<span>${abbr(m.home)} - ${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:(m.kickoff?`<span>${fmtDay(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`:`<span>${m.day?fmtDay(m.day):"—"}</span><span>da definire</span>`)}</div></div>`).join("")}</div></div>`;
+    <div class="next" id="next-bar" data-round="${r.n}">${show.map(m=>`<div class="mini${esito(m)?" done":m.kickoff&&+new Date(m.kickoff)<=Date.now()?" live":""}"><div class="teams">${crest(m.home)}<span>${abbr(m.home)} - ${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:(m.kickoff&&+new Date(m.kickoff)<=Date.now()?`<span>${fmtDay(m.kickoff)}</span><span class="live">In corso</span>`:m.kickoff?`<span>${fmtDay(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`:`<span>${m.day?fmtDay(m.day):"—"}</span><span>da definire</span>`)}</div></div>`).join("")}</div></div>`;
   }
   return html;
 }
@@ -959,7 +951,7 @@ function vStandings(L){
   const v=(x)=>x?f2(x):"–";
   if(!scored.length||S.rankView==="gen"){
     html+=`<section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
-    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos"><span class="posb${r.pos<=3?" p"+r.pos:""}">${r.pos}</span></td><td class="nm">${esc(r.nick)}${r.bot?` <span class="chip">prova</span>`:""}${r.adj?` <span class="adjmark ${r.adj<0?"neg":"pos"}" title="${r.adj<0?"Penalità":"Bonus"} dell'admin">${r.adj>0?"+":"−"}${f2(Math.abs(r.adj))}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td><td class="n">${v(r.mq)}</td></tr>`).join("")}
+    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos"><span class="posb${r.pos<=3?" p"+r.pos:""}">${r.pos}</span></td><td class="nm">${esc(r.nick)}${r.adj?` <span class="adjmark ${r.adj<0?"neg":"pos"}" title="${r.adj<0?"Penalità":"Bonus"} dell'admin">${r.adj>0?"+":"−"}${f2(Math.abs(r.adj))}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td><td class="n">${v(r.mq)}</td></tr>`).join("")}
     </tbody></table></div>${scored.length?`<p class="small muted" style="font-family:var(--f-ui)">A pari punti decide il <b>Miglior punteggio di giornata (MP)</b>, poi la <b>Miglior quota (MQ)</b>.</p>`:""}${adjustNotes()}</section>`;
   }else{
     const r=S.rounds.find(x=>"g"+x.n===S.rankView);if(!r){S.rankView="gen";return vStandings(L)}
@@ -988,7 +980,7 @@ function vInfo(L){
    <tr><td>Criteri spareggio</td><td>1. Miglior punteggio di giornata (MP)<br>2. Miglior quota (MQ)</td></tr>
    <tr><td>Durata</td><td>Dalla ${L.startRound}ª alla 38ª giornata</td></tr>
    <tr><td>Inserimento pronostici</td><td>Fino al fischio d'inizio della giornata</td></tr></tbody></table></section>
-  <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m.bot?` <span class="chip">prova</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ghost" data-act="removeMember" data-u="${m._id}">Rimuovi</button>`:""}</div>${admin&&S.confirm==="rm-"+m._id?`<div class="confirmrow"><p class="small" style="font-family:var(--f-ui)">Rimuovere <b>${esc(m.nick)}</b> dalla lega? Verranno eliminate anche le sue schedine e uscirà dalla classifica. Non si può annullare.</p><div class="row"><button class="btn sm danger" data-act="removeMemberOk" data-u="${m._id}">Rimuovi</button><button class="btn sm sec" data-act="removeMemberNo">Annulla</button></div></div>`:""}`).join("")}</div></section>
+  <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ghost" data-act="removeMember" data-u="${m._id}">Rimuovi</button>`:""}</div>${admin&&S.confirm==="rm-"+m._id?`<div class="confirmrow"><p class="small" style="font-family:var(--f-ui)">Rimuovere <b>${esc(m.nick)}</b> dalla lega? Verranno eliminate anche le sue schedine e uscirà dalla classifica. Non si può annullare.</p><div class="row"><button class="btn sm danger" data-act="removeMemberOk" data-u="${m._id}">Rimuovi</button><button class="btn sm sec" data-act="removeMemberNo">Annulla</button></div></div>`:""}`).join("")}</div></section>
   ${admin?`<p class="small muted center" style="font-family:var(--f-ui)">Sei l'admin: per lasciare la lega devi eliminarla dal Pannello admin.</p>`
    :S.confirm==="leave"?`<section class="card"><h3>Abbandonare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Uscirai dalla lega: verranno eliminate le tue schedine e sparirai dalla classifica. Non si può annullare${calRoundStarted(L.startRound)?", e non potrai rientrare perché la lega è già iniziata":""}.</p><div class="row"><button class="btn danger" data-act="leaveOk">Abbandona</button><button class="btn sec" data-act="leaveNo">Annulla</button></div></section>`
    :`<section class="card"><button class="btn wide sec leavebtn" data-act="leaveAsk">Abbandona lega</button></section>`}`;
@@ -1104,7 +1096,6 @@ function vCreate(){
 /* prossima giornata della lega: la prima non ancora iniziata */
 function nextLeagueRound(){return S.rounds.find(r=>!roundLocked(r))||null}
 function vAdmin(L){
-  const bots=S.members.filter(m=>m.bot);const rb=S.rounds.find(x=>roundVisible(x)&&x.matches.some(m=>!esito(m)))||null;
   const nr=nextLeagueRound();const st=S.pickStatus&&S.pickStatus.lid===L._id&&nr&&S.pickStatus.n===nr.n?S.pickStatus:null;
   if(nr&&!st&&!S.pickStatusBusy){S.pickStatusBusy=true;B.pickStatus(nr.n).then(rows=>{S.pickStatus={lid:L._id,n:nr.n,rows:rows||[]}}).catch(e=>toast(itMsg(e))).finally(()=>{S.pickStatusBusy=false;render()})}
   const done=st?st.rows.filter(x=>x.picks>=10).length:0,tot=st?st.rows.length:approved().length;
@@ -1114,7 +1105,7 @@ function vAdmin(L){
    ${!nr?`<p class="small muted" style="font-family:var(--f-ui)">Non ci sono giornate da giocare.</p>`:!st?`<p class="small muted">Caricamento…</p>`:`
    <button type="button" class="pstat" data-act="toggleStatus" aria-expanded="${!!S.showStatus}"><span class="pnum"><b>${done}</b>/${tot}</span><span class="grow">hanno salvato tutti e 10 i pronostici${roundVisible(nr)?"":" · quote non ancora pubblicate"}</span><span class="pgo">${S.showStatus?"Chiudi":"Dettaglio"} ›</span></button>
    <div class="pbar" aria-hidden="true"><span style="width:${tot?Math.round(done/tot*100):0}%"></span></div>
-   ${S.showStatus?`<div class="list">${[...st.rows].sort((a,b)=>(a.picks>=10)-(b.picks>=10)||a.nickname.localeCompare(b.nickname,"it",{sensitivity:"base"})).map(x=>`<div class="row"><span class="dot ${x.picks>=10?"ok":"no"}" aria-hidden="true"></span><span class="grow">${esc(x.nickname)}${x.is_bot?` <span class="chip">prova</span>`:""}</span><span class="small ${x.picks>=10?"":"muted"}">${x.picks>=10?"Completa":x.picks?`${x.picks}/10`:"Nessun pronostico"}</span></div>`).join("")}</div>
+   ${S.showStatus?`<div class="list">${[...st.rows].sort((a,b)=>(a.picks>=10)-(b.picks>=10)||a.nickname.localeCompare(b.nickname,"it",{sensitivity:"base"})).map(x=>`<div class="row"><span class="dot ${x.picks>=10?"ok":"no"}" aria-hidden="true"></span><span class="grow">${esc(x.nickname)}</span><span class="small ${x.picks>=10?"":"muted"}">${x.picks>=10?"Completa":x.picks?`${x.picks}/10`:"Nessun pronostico"}</span></div>`).join("")}</div>
    <button class="btn sm ghost" data-act="reloadStatus" style="align-self:flex-start">Aggiorna</button>`:""}`}
   </section>
   <section class="card"><h3>Bonus e penalità</h3><p class="small muted" style="font-family:var(--f-ui)">Aggiungi o togli punti dal totale di un partecipante. Usa il segno meno per una penalità (es. −2). Tutti vedono le rettifiche sotto la classifica.</p>
@@ -1127,9 +1118,6 @@ function vAdmin(L){
    ${(S.adjust||[]).length?`<div class="list">${S.adjust.map(a=>`<div class="row"><span class="adjmark ${a.pts<0?"neg":"pos"}">${a.pts>0?"+":"−"}${f2(Math.abs(a.pts))}</span><span class="grow">${esc(S.members.find(m=>m.mid===a.mid)?.nick||"—")}${a.why?` <span class="small muted">· ${esc(a.why)}</span>`:""}</span><button class="btn sm ghost" data-act="delAdjust" data-id="${a.id}">Annulla</button></div>`).join("")}</div>`:""}
   </section>
   ${L.type==="private"?`<section class="card"><h3>Password della lega</h3><form class="row" data-submit="setLeaguePw" novalidate><input type="text" id="lpw" class="grow" data-bind="pwForm" value="${esc(S.pwForm)}" placeholder="${S.leaguePw[L._id]?"Nuova password":"Imposta la password"}" autocomplete="off" aria-label="Nuova password"><button class="btn sm" type="submit" ${S.busy?"disabled":""}>Salva</button></form><p class="small muted" style="font-family:var(--f-ui)">${S.leaguePw[L._id]?`Attuale: <b>${esc(S.leaguePw[L._id])}</b>. `:""}Gli iscritti la vedono nella pagina della lega, per invitare altri.</p></section>`:""}
-  <section class="card"><h3>Giocatori di prova</h3><p class="small muted" style="font-family:var(--f-ui)">Per i test: giocatori fittizi con schedine casuali, con l'etichetta “prova” in classifica.</p>
-   <div class="row"><button class="btn sm sec" data-act="addBot">Aggiungi giocatore di prova</button><span class="small muted">${bots.length} in lega</span></div>
-   ${rb?`<button class="btn sm sec" data-act="botPicks" data-r="${rb._id}" style="align-self:flex-start">Schedine casuali per la ${rb.n}ª giornata</button>`:""}</section>
   ${S.confirm==="delLeague"?`<section class="card" id="del-league"><h3>Eliminare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Verranno eliminate giornate, schedine e classifica per tutti i partecipanti. Non si può annullare.</p><div class="row"><button class="btn danger" data-act="delLeague">Elimina definitivamente</button><button class="btn sec" data-act="delLeagueNo">Annulla</button></div></section>`:`<section class="card"><button class="btn wide danger" data-act="delLeague">Elimina lega</button></section>`}`;
 }
 

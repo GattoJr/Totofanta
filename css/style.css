@@ -559,3 +559,6 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .lsitem .grow{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lsitem svg{width:18px;height:18px;flex:none}
 .leavebtn{color:var(--lose)}
+
+/* Home: partita iniziata senza risultato */
+.mini.live .when span.live{color:var(--blue-text);font-weight:700}
