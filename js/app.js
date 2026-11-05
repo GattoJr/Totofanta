@@ -717,7 +717,7 @@ function vDrawer(){
     ?`<button class="profbtn" data-act="openProfile"><span class="bigav" aria-hidden="true">${esc(((me?.nick||S.email||"?").trim()[0]||"?").toUpperCase())}</span><span class="pinfo"><b>${esc(me?.nick||"Il tuo profilo")}</b><span class="small">${esc(S.email)}</span></span><span class="pgo">Profilo ›</span></button>`
     :`<label class="small" for="who-sel">Stai giocando come</label><select id="who-sel">${S.localUsers.map(u=>`<option value="${u.id}"${u.id===S.uid?" selected":""}>${esc(u.name)}</option>`).join("")}</select><button class="btn" data-act="addLocal">+ Nuovo giocatore</button><button class="btn" data-act="openProfile">Profilo</button>`;
   return `<div class="scrim" data-act="closeAll"></div><aside class="drawer" aria-label="Menu">
-  <div class="head">${ONLINE?`<button class="logoutbtn" data-act="logout">${I.logout}Logout</button>`:""}${who}</div>
+  <div class="head">${who}${ONLINE?`<button class="logoutbtn" data-act="logout">${I.logout}Logout</button>`:""}</div>
   <nav>
    <div class="grp">Leghe</div>
    <button class="dl" data-act="newLeague">${I.plus}Crea una lega</button><button class="dl" data-act="joinModal">${I.enter}Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">${I.league}Le mie leghe</button>

@@ -482,8 +482,7 @@ td.n,th.n{padding-inline:6px}
 .pod.me .pnick{text-decoration:underline;text-underline-offset:3px}
 .mini.done .when span:last-child b{font-family:var(--f-num);font-size:15px;color:var(--ink)}
 .drawer .head{position:relative}
-.logoutbtn{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.16);color:var(--blue-ink);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:4px 10px;font:600 12px var(--f-ui);cursor:pointer}
+.logoutbtn{align-self:flex-start;margin:-2px 0 0 58px;display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.16);color:var(--blue-ink);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:4px 10px;font:600 12px var(--f-ui);cursor:pointer}
 .logoutbtn svg{width:14px;height:14px}
-.drawer .head .profbtn{margin-top:18px}
 .summary.one{grid-template-columns:1fr}
 .confirmrow{background:var(--lose-soft);border-radius:8px;padding:10px 12px;margin:4px 0 8px;display:flex;flex-direction:column;gap:8px}
