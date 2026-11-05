@@ -49,6 +49,7 @@ Deno.serve(async (req) => {
   const opts = await req.json().catch(() => ({}));
   const doResults = opts.results === true;
   const dry = opts.dry === true;
+  const reason = typeof opts.reason === "string" ? opts.reason : (secret ? "programmato" : "manuale");
   const season = Number(opts.season) || 2026;
 
   const token = Deno.env.get("FOOTBALL_DATA_TOKEN");
@@ -112,7 +113,9 @@ Deno.serve(async (req) => {
       const h = m.score?.fullTime?.home, a = m.score?.fullTime?.away;
       if (Number.isInteger(h) && Number.isInteger(a) && (h !== f.hg || a !== f.ag)) { upd.hg = h; upd.ag = a; }
     }
-    if (Object.keys(upd).length) changes.push({ id: f.id, match: label, from: { kickoff: f.kickoff, day: f.day, hg: f.hg, ag: f.ag }, to: upd });
+    // per misurare il ritardo dei dati gratuiti: minuti tra la fine stimata (inizio + 1h50) e l'arrivo del risultato
+    const delay = "hg" in upd && f.hg == null && f.kickoff ? Math.round((now - Date.parse(f.kickoff) - 110 * 60e3) / 60e3) : undefined;
+    if (Object.keys(upd).length) changes.push({ id: f.id, match: label, from: { kickoff: f.kickoff, day: f.day, hg: f.hg, ag: f.ag }, to: upd, ...(delay !== undefined ? { ritardoMin: delay } : {}) });
   }
 
   const failed: any[] = [];
@@ -122,7 +125,7 @@ Deno.serve(async (req) => {
       if (error) failed.push({ match: c.match, error: error.message });
     }
   }
-  const summary = { season, results: doResults, dry, apiMatches: matches.length, changed: changes.length, changes, unmatched, postponed, failed, quota };
+  const summary = { reason, season, results: doResults, dry, apiMatches: matches.length, changed: changes.length, changes, unmatched, postponed, failed, quota };
   await log(failed.length === 0 && unmatched.length === 0, summary);
   return json(summary);
 });

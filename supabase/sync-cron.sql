@@ -1,29 +1,19 @@
 -- =====================================================================
--- TOTOFANTA · attività programmate per la funzione sync-calendario
--- (orari in UTC: 9:00 UTC = 10:00 in Italia con l'ora solare, 11:00 con l'ora legale)
--- Prima: schema.sql (crea private.settings con sync_secret) e funzione
--- sync-calendario pubblicata con il secret FOOTBALL_DATA_TOKEN.
+-- TOTOFANTA · attività programmate (pg_cron + pg_net)
+-- Prima: schema.sql (private.settings con sync_secret), funzioni sync-calendario
+-- (secret FOOTBALL_DATA_TOKEN) e sync-quote (secret ODDS_API_KEY).
+-- Entrambe le attività girano ogni 5 minuti ma chiamano le API solo quando serve:
+-- la logica (in ora italiana, quindi anche con l'ora legale) è nelle funzioni private.
 -- =====================================================================
 
--- ogni mattina: date, orari confermati e risultati
-select cron.schedule('sync-calendario-mattina', '0 9 * * *', $$
-  select net.http_post(
-    url := 'https://cmjdfhkmzrfuukgeudet.supabase.co/functions/v1/sync-calendario',
-    headers := jsonb_build_object('Content-Type','application/json','x-sync-secret',(select value from private.settings where key='sync_secret')),
-    body := '{"results":true}'::jsonb, timeout_milliseconds := 30000)
-$$);
+-- RISULTATI e CALENDARIO (v12) → private.results_tick(), vedi migrazione-v12-risultati.sql
+--   · ogni mattina alle 8:00: date, orari confermati e risultati
+--   · a fine partita: da 1h50 dopo il calcio d'inizio, ogni ~10 minuti finché arriva il risultato
+--     (al massimo fino a 6 ore dopo l'inizio)
+select cron.schedule('sync-risultati-tick', '*/5 * * * *', $$ select private.results_tick() $$);
 
--- ogni ora dalle 12:15 alle 23:15 UTC: risultati delle partite finite
-select cron.schedule('sync-risultati-orario', '15 12-23 * * *', $$
-  select net.http_post(
-    url := 'https://cmjdfhkmzrfuukgeudet.supabase.co/functions/v1/sync-calendario',
-    headers := jsonb_build_object('Content-Type','application/json','x-sync-secret',(select value from private.settings where key='sync_secret')),
-    body := '{"results":true}'::jsonb, timeout_milliseconds := 30000)
-$$);
+-- QUOTE (v10) → private.odds_tick(), vedi migrazione-v10-quote.sql
+--   · ogni ora piena 8–21 e 30' prima della prima partita della giornata; mai a giornata in corso
+select cron.schedule('sync-quote-tick', '*/5 * * * *', $$ select private.odds_tick() $$);
 
--- per toglierle: select cron.unschedule('sync-calendario-mattina'); select cron.unschedule('sync-risultati-orario');
-
--- QUOTE (v10, funzione sync-quote con il secret ODDS_API_KEY): controllo ogni 5 minuti,
--- la logica (8–21 ora italiana, 30' prima della prima partita, pausa a giornata in corso)
--- è in private.odds_tick() → vedi migrazione-v10-quote.sql
--- per toglierla: select cron.unschedule('sync-quote-tick');
+-- per toglierle: select cron.unschedule('sync-risultati-tick'); select cron.unschedule('sync-quote-tick');
