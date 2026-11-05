@@ -202,6 +202,9 @@ const Online={
     S.meLoaded=false;render();
     await Promise.all([this.refreshLeagues(),this.loadFixtures()]);
     pickDefaultLeague();
+    if(S.pendingJoin){const n=S.pendingJoin;S.pendingJoin=null;openJoin(n)}
+    /* invito aperto prima dell'accesso: se sono già iscritto a quella lega non chiedo di nuovo i dati */
+    if(S.modal==="join"&&S.form?.name){const mine=myLeagueByName(S.form.name);if(mine)alreadyIn(mine)}
     this.subscribe();
     fetchJoinKind();resolveLegacyCode();
     render();
@@ -397,7 +400,14 @@ function resolveLegacyCode(){
   const code=S.legacyCode;if(!code||!S.uid)return;S.legacyCode=null;
   B.nameByCode(code).then(n=>{if(n&&S.modal==="join"&&!S.form.name){openJoin(n);render()}}).catch(()=>{});
 }
+/* lega dell'invito a cui sono già iscritto (stesso nome, maiuscole e spazi ignorati) */
+function myLeagueByName(name){const k=(name||"").trim().toLowerCase();return k?myLeagues().find(l=>(l.nameKey||l.name.trim().toLowerCase())===k):null}
+function alreadyIn(L){S.modal=null;S.form={};S.formErr="";if(location.hash)try{history.replaceState(null,"",location.pathname+location.search)}catch{}
+  selectLeague(L._id);S.screen="home";flash(`Sei già iscritto alla lega “${L.name}”`)}
 function openJoin(name){
+  /* leghe non ancora caricate: si decide dopo il caricamento */
+  if(ONLINE&&S.uid&&!S.meLoaded){S.pendingJoin=name;return}
+  const mine=myLeagueByName(name);if(mine)return alreadyIn(mine);
   S.form={name,linkName:name,pw:"",nick:"",fromLink:true,kind:undefined};S.formErr="";S.modal="join";S.drawer=false;fetchJoinKind();
 }
 /* privata o pubblica? serve a chiedere la password solo quando serve (richiede l'accesso) */
@@ -501,10 +511,12 @@ const ACT={
   async join(){
     const f=S.form;
     if(!(f.name||"").trim())return err("Inserisci il nome della lega");
+    {const mine=myLeagueByName(f.name);if(mine)return alreadyIn(mine)}
     if(!(f.fromLink&&(f.name||"").trim()===(f.linkName||"").trim()&&f.kind==="public")&&f.fromLink&&!(f.pw||""))return err("Inserisci la password della lega");
     if((f.nick||"").trim().length<2)return err("Scegli il tuo nickname");
     S.formErr="";
-    try{S.busy=true;render();const r=await B.joinLeague(f);toast(r.status==="approved"?"Sei dentro!":"Richiesta in attesa dell'admin");
+    try{S.busy=true;render();const known=new Set(myLeagues().map(l=>l._id));const r=await B.joinLeague(f);
+      toast(known.has(r.lid)?"Sei già iscritto a questa lega":r.status==="approved"?"Sei dentro!":"Richiesta in attesa dell'admin");
       if(location.hash)try{history.replaceState(null,"",location.pathname+location.search)}catch{}
       selectLeague(r.lid);go("home")}
     catch(e){S.formErr=itMsg(e)}finally{S.busy=false;render()}
