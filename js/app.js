@@ -68,7 +68,7 @@ const S={
   form:{},formErr:"",authForm:{mode:"login",email:"",pw:"",pw2:""},authMsg:"",busy:false,
   confirm:null,showOthers:false,draft:{},leave:null,flash:"",
   localUsers:[],
-  fixtures:[],odds:{},calRounds:{},siteAdmin:false,calN:null,admN:null,admEdit:null,
+  fixtures:[],odds:{},calRounds:{},siteAdmin:false,oddsAlerts:[],oddsSync:null,admWarnOk:false,calN:null,admN:null,admEdit:null,
 };
 
 /* =====================================================================
@@ -200,7 +200,7 @@ const Online={
   subscribe(){
     const ch=this.sb.channel("tf-"+S.uid);
     for(const t of ["leagues","members","picks"])ch.on("postgres_changes",{event:"*",schema:"public",table:t},()=>this.refreshSoon());
-    for(const t of ["fixtures","odds","calendar_rounds"])ch.on("postgres_changes",{event:"*",schema:"public",table:t},()=>{clearTimeout(this.tf);this.tf=setTimeout(()=>this.loadFixtures().then(render),400)});
+    for(const t of ["fixtures","odds","calendar_rounds","odds_alerts"])ch.on("postgres_changes",{event:"*",schema:"public",table:t},()=>{clearTimeout(this.tf);this.tf=setTimeout(()=>this.loadFixtures().then(render),400)});
     ch.subscribe();this.chan=ch;
   },
   refreshSoon(){clearTimeout(this.t);this.t=setTimeout(()=>this.refresh(),250)},
@@ -218,19 +218,30 @@ const Online={
     const [f,o,c,a]=await Promise.all([sb.from("fixtures").select("*").order("id"),sb.from("odds").select("*"),sb.from("calendar_rounds").select("n,published"),sb.from("site_admins").select("user_id").eq("user_id",S.uid)]);
     if(f.error){console.warn("Calendario non disponibile",f.error);S.fixtures=[];S.siteAdmin=false;return}
     S.fixtures=f.data.map(x=>({id:x.id,n:x.n,pos:x.pos,home:x.home,away:x.away,kickoff:x.kickoff||null,day:x.day,hg:x.hg??null,ag:x.ag??null}));
-    S.odds={};if(!o.error)for(const x of o.data)S.odds[x.fixture_id]={o1:Number(x.o1),oX:Number(x.ox),o2:Number(x.o2)};
+    S.odds={};if(!o.error)for(const x of o.data)S.odds[x.fixture_id]={o1:Number(x.o1),oX:Number(x.ox),o2:Number(x.o2),manual:!!x.manual,source:x.source,at:x.updated_at};
     S.calRounds={};if(!c.error)for(const x of c.data)if(x.published)S.calRounds[x.n]=true;
     S.siteAdmin=!a.error&&a.data.length>0;
+    if(S.siteAdmin){const [al,lg]=await Promise.all([sb.from("odds_alerts").select("*"),sb.from("sync_log").select("ran_at,ok,summary").eq("kind","quote").order("ran_at",{ascending:false}).limit(1)]);
+      S.oddsAlerts=al.error?[]:al.data;S.oddsSync=lg.error?null:(lg.data[0]||null)}else{S.oddsAlerts=[];S.oddsSync=null}
   },
   async saveFixtures(changes){
     const sb=this.sb;
     for(const c of changes){
       const d=this.check(await sb.from("fixtures").update({kickoff:c.kickoff,hg:c.hg,ag:c.ag}).eq("id",c.id).select("id"));if(!d.length)throw new Error("Non hai i permessi di amministratore");
-      if(c.o1!=null)this.check(await sb.from("odds").upsert({fixture_id:c.id,o1:c.o1,ox:c.oX,o2:c.o2},{onConflict:"fixture_id"}));
-      else this.check(await sb.from("odds").delete().eq("fixture_id",c.id));
+      if(c.oddsChanged){
+        if(c.o1!=null)this.check(await sb.from("odds").upsert({fixture_id:c.id,o1:c.o1,ox:c.oX,o2:c.o2,manual:true,source:"admin"},{onConflict:"fixture_id"}));
+        else this.check(await sb.from("odds").delete().eq("fixture_id",c.id));
+        await sb.from("odds_alerts").delete().eq("fixture_id",c.id);
+      }
     }
     await this.refresh();
   },
+  async setOddsAuto(id){this.check(await this.sb.from("odds").update({manual:false}).eq("fixture_id",id));await this.refresh()},
+  async acceptAlert(a){
+    if(a.blocking&&a.c1)this.check(await this.sb.from("odds").upsert({fixture_id:a.fixture_id,o1:a.c1,ox:a.cx,o2:a.c2,manual:false,source:"api"},{onConflict:"fixture_id"}));
+    this.check(await this.sb.from("odds_alerts").delete().eq("fixture_id",a.fixture_id));await this.refresh()},
+  async syncOdds(){const {data,error}=await this.sb.functions.invoke("sync-quote",{body:{reason:"manuale"}});
+    if(error){let msg=error.message;try{msg=(await error.context.json()).error||msg}catch{}throw new Error(msg)}await this.refresh();return data},
   async setPublished(n,v){const d=this.check(await this.sb.from("calendar_rounds").update({published:v}).eq("n",n).select("n"));if(!d.length)throw new Error("Non hai i permessi di amministratore");await this.refresh()},
   async loadLeague(lid){
     const seq=++this.loadSeq;const sb=this.sb;
@@ -501,7 +512,10 @@ const ACT={
   openCal:d=>{S.calN=+d.n||S.calN||nextCalendarRound();go("calendario")},
   calStep:d=>{S.calN=Math.min(38,Math.max(1,(S.calN||nextCalendarRound())+(+d.d)));render()},
   admStep:d=>{S.admN=Math.min(38,Math.max(1,(S.admN||adminDefaultRound())+(+d.d)));S.admEdit=null;S.formErr="";render()},
-  admUndo:()=>{S.admEdit=null;S.formErr="";render()},
+  admUndo:()=>{S.admEdit=null;S.formErr="";S.admWarnOk=false;render()},
+  admAuto:d=>safe(async()=>{await B.setOddsAuto(+d.id);toast("Quota di nuovo automatica: si aggiorna al prossimo giro")}),
+  admAlert:d=>{const a=S.oddsAlerts.find(x=>x.fixture_id===+d.id);if(!a)return;safe(async()=>{await B.acceptAlert(a);S.admEdit=null;toast(a.blocking?"Quota proposta applicata":"Avviso archiviato")})},
+  admSync:()=>safe(async()=>{const r=await B.syncOdds();S.admEdit=null;toast(`Quote aggiornate: ${r.updated} partite${r.alerts?.length?` · ${r.alerts.length} avvisi`:""}${r.remaining!=null?` · crediti rimasti ${r.remaining}`:""}`)}),
   admSim:()=>{const now=Date.now();let k=0;for(const f of fixturesOf(S.admN)){const e=S.admEdit?.e[f.id];if(!e)continue;const t=e.k?+new Date(e.k):NaN;
     if(!isNaN(t)&&t<=now&&e.hg===""&&e.ag===""){const x=Math.random();const[h,a]=sampleScore(x<.45?"1":x<.72?"X":"2");e.hg=String(h);e.ag=String(a);k++}}
     render();toast(k?`${k} risultati simulati: premi Salva`:"Nessuna partita iniziata senza risultato")},
@@ -519,9 +533,11 @@ const ACT={
       const r2=x=>x==null?null:Math.round(x*100)/100;const[o1,oX,o2]=od.map(r2);const cur=S.odds[f.id]||{};
       const sameK=(kickoff?Date.parse(kickoff):null)===(f.kickoff?Date.parse(f.kickoff):null);
       const sameO=o1===(cur.o1??null)&&oX===(cur.oX??null)&&o2===(cur.o2??null);
-      if(!sameK||!sameO||hg!==(f.hg??null)||ag!==(f.ag??null))changes.push({id:f.id,kickoff,hg,ag,o1,oX,o2})}
+      if(!sameK||!sameO||hg!==(f.hg??null)||ag!==(f.ag??null))changes.push({id:f.id,kickoff,hg,ag,o1,oX,o2,oddsChanged:!sameO,label:`${f.home}–${f.away}`})}
     if(!changes.length)return toast("Nessuna modifica da salvare");
-    S.formErr="";
+    const warns=changes.filter(c=>c.oddsChanged&&c.o1!=null).map(c=>{const w=oddsWarn(c.o1,c.oX,c.o2);return w?`${c.label}: ${w}`:null}).filter(Boolean);
+    if(warns.length&&!S.admWarnOk){S.admWarnOk=true;return err(`Quote poco verosimili: ${warns.join(" · ")}. Premi di nuovo Salva per confermare.`)}
+    S.admWarnOk=false;S.formErr="";
     safe(async()=>{await B.saveFixtures(changes);S.admEdit=null;toast(`${changes.length===1?"1 partita aggiornata":changes.length+" partite aggiornate"}${ONLINE?" per tutte le leghe":""}`)});
   },
   admPub:d=>{const n=S.admN;const v=d.v==="1";
@@ -793,6 +809,8 @@ function vPicks(L){
   if(list.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${list.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
   if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
   const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=!roundLocked(r);
+  if(anyOpen&&ONLINE){const ts=r.matches.map(m=>S.odds[m.id]?.at).filter(Boolean).sort();const last=ts[ts.length-1];
+    html+=`<p class="small muted oddsnote">Quote provvisorie: si aggiornano fino al fischio d'inizio della prima partita e i punti si calcolano su quelle finali${last?` · aggiornate ${fmtStamp(last)}`:""}</p>`}
   html+=r.matches.map(m=>{
     const locked=roundLocked(r);const started=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
@@ -908,12 +926,26 @@ function vCalendar(){
 }
 
 /* ---- Pannello amministratore del sito ---- */
+/* verosimiglianza di una quota 1X2: somma delle probabilità e intervallo (stesse soglie di sync-quote) */
+function oddsWarn(o1,oX,o2){const a=[o1,oX,o2];if(a.some(x=>x<1.01||x>50))return "quota fuori dall'intervallo 1.01–50";
+  const s=1/o1+1/oX+1/o2;return s<0.97||s>1.15?`somma delle probabilità ${(s*100).toFixed(1)}% (normale 100–110%)`:""}
+const fmtStamp=iso=>`${fmtDow(iso)} alle ${fmtTime(iso)}`;
 const oddStr=x=>x==null?"":Number(x).toFixed(2);
 function admBase(f){const o=S.odds[f.id]||{};return{k:toInput(f.kickoff),o1:oddStr(o.o1),oX:oddStr(o.oX),o2:oddStr(o.o2),hg:f.hg==null?"":String(f.hg),ag:f.ag==null?"":String(f.ag)}}
 function admDirty(){if(!S.admEdit)return false;return fixturesOf(S.admEdit.n).some(f=>{const e=S.admEdit.e[f.id],b=admBase(f);return e&&Object.keys(b).some(k=>String(e[k]??"")!==b[k])})}
+function oddsCard(){
+  const L=S.oddsSync;const sm=L?.summary||{};const al=[...S.oddsAlerts].sort((a,b)=>a.fixture_id-b.fixture_id);
+  const name=id=>{const f=S.fixtures.find(x=>x.id===id);return f?`${f.n}ª ${esc(f.home)}–${esc(f.away)}`:"#"+id};
+  const q=a=>a.c1?`${oddStr(a.c1)} / ${oddStr(a.cx)} / ${oddStr(a.c2)}`:"—";
+  return `<section class="card"><div class="row"><h3 class="grow">Quote automatiche</h3><button class="btn sm sec" data-act="admSync" ${S.busy?"disabled":""}>Aggiorna ora</button></div>
+   <p class="small" style="font-family:var(--f-ui)">${L?`Ultimo aggiornamento: <b>${fmtStamp(L.ran_at)}</b> ${L.ok?"":`<span class="chip warn">${esc(sm.error||"con problemi")}</span>`}${sm.remaining!=null?` · crediti rimasti <b>${sm.remaining}</b>`:""}${sm.updated!=null?` · ${sm.updated} partite aggiornate`:""}`:"Nessun aggiornamento ancora eseguito."}</p>
+   <p class="small muted" style="font-family:var(--f-ui)">Ogni ora dalle 8 alle 21 e 30 minuti prima della prima partita; ferme mentre si gioca una giornata. "Aggiorna ora" consuma 1 credito.</p>
+   ${al.length?`<div class="list">${al.map(a=>`<div class="alertrow ${a.blocking?"blk":""}"><div class="grow"><b>${name(a.fixture_id)}</b><br><span class="small">${a.blocking?"Quota <b>non applicata</b>":"Quota applicata, da controllare"}: ${esc(a.reason)} · proposta ${q(a)}</span></div><button class="btn sm ${a.blocking?"":"ghost"}" data-act="admAlert" data-id="${a.fixture_id}" ${a.blocking&&!a.c1?"disabled":""}>${a.blocking?"Applica":"Ok"}</button></div>`).join("")}</div>`:`<p class="small" style="font-family:var(--f-ui)"><span class="chip ok">Nessun avviso</span></p>`}
+  </section>`;
+}
 function vPanel(){
   let html=`<h2 class="pagetitle">Pannello amministratore</h2>
-  <p class="tip">${ONLINE?"Quello che salvi qui vale subito per tutte le leghe.":"Modalità prova: le modifiche restano in questo browser."} Poteri attivi: <b>orari</b>, <b>quote</b> e <b>risultati</b> delle partite, <b>pubblicazione</b> delle giornate.</p>`;
+  <p class="tip">${ONLINE?"Quello che salvi qui vale subito per tutte le leghe.":"Modalità prova: le modifiche restano in questo browser."} Poteri attivi: <b>orari</b>, <b>quote</b> e <b>risultati</b> delle partite, <b>pubblicazione</b> delle giornate.</p>`+(ONLINE?oddsCard():"");
   if(!S.fixtures.length)return html+noCalendar();
   const n=S.admN||(S.admN=adminDefaultRound());const fs=fixturesOf(n);
   if(!S.admEdit||S.admEdit.n!==n){S.admEdit={n,e:{}};for(const f of fs)S.admEdit.e[f.id]=admBase(f)}
@@ -929,10 +961,11 @@ function vPanel(){
      <input type="datetime-local" class="k" id="adm-k${f.id}" data-bind="admEdit.e.${f.id}.k" data-rerender value="${esc(e.k)}" aria-label="Calcio d'inizio ${esc(f.home)}–${esc(f.away)}">
      <div class="od">${["o1","oX","o2"].map((k,j)=>`<input type="text" inputmode="decimal" id="adm-${k}${f.id}" data-bind="admEdit.e.${f.id}.${k}" value="${esc(e[k])}" placeholder="${["1","X","2"][j]}" aria-label="Quota ${["1","X","2"][j]} ${esc(f.home)}–${esc(f.away)}">`).join("")}</div>
      <div class="sc"><input type="number" min="0" id="adm-h${f.id}" data-bind="admEdit.e.${f.id}.hg" value="${esc(e.hg)}" ${started?"":"disabled"} aria-label="Gol ${esc(f.home)}"><span>-</span><input type="number" min="0" id="adm-a${f.id}" data-bind="admEdit.e.${f.id}.ag" value="${esc(e.ag)}" ${started?"":"disabled"} aria-label="Gol ${esc(f.away)}"></div>
+     ${ONLINE&&S.odds[f.id]?`<span class="small st oddsrc">${S.odds[f.id].manual?`<b>quota manuale</b> <button class="linkbtn" data-act="admAuto" data-id="${f.id}">torna automatica</button>`:S.odds[f.id].source==="api"?"quota automatica":"quota inserita a mano"}</span>`:""}
      <span class="small muted st">${!e.k?`orario da definire · indicativa ${f.day?fmtDow(f.day):"—"}`:started?(es?"esito "+es:"risultato da inserire"):"da giocare"}</span></div>`}).join("")}</div>
    ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
    <div class="row"><button class="btn sm" data-act="admSave" ${S.busy?"disabled":""}>Salva</button><button class="btn sm ghost" data-act="admUndo">Annulla modifiche</button><button class="btn sm sec" data-act="admSim">Simula risultati (test)</button></div>
-   <p class="small muted" style="font-family:var(--f-ui)">Per pubblicare servono orario e quote di tutte le 10 partite. Il risultato si inserisce dopo il calcio d'inizio; se lo correggi, le classifiche si ricalcolano da sole.</p></section>`;
+   <p class="small muted" style="font-family:var(--f-ui)">${ONLINE?"Le quote si aggiornano da sole fino al fischio d'inizio della prima partita, poi restano fisse: da quel momento le puoi cambiare solo tu, da qui. Una quota che modifichi diventa <b>manuale</b> e l'aggiornamento automatico non la tocca più. La giornata si pubblica da sola quando tutte le 10 partite hanno orario e quote. ":""}Per pubblicare servono orario e quote di tutte le 10 partite. Il risultato si inserisce dopo il calcio d'inizio; se lo correggi, le classifiche si ricalcolano da sole.</p></section>`;
   return html;
 }
 
