@@ -139,6 +139,8 @@ const Local={
   },
   async approve(m){await LocalStore.set(`leagues/${S.lid}/members/${m._id}`,{nick:m.nick,status:"approved",bot:!!m.bot,joinedAt:m.joinedAt||Date.now()})},
   async removeMember(m){await LocalStore.del(`leagues/${S.lid}/members/${m._id}`)},
+  async leaveLeague(){const lid=S.lid;await LocalStore.del(`leagues/${lid}/members/${S.uid}`);await this.removeFromMe(lid)},
+  async joinOpen(name){const L=LocalStore.list("leagues").find(l=>l.nameKey===(name||"").trim().toLowerCase());return !L||!calRoundStarted(L.startRound)},
   async myNicknames(){const out={};for(const lid of S.me.leagues||[]){const m=LocalStore.list(`leagues/${lid}/members`).find(x=>x._id===S.uid);if(m)out[lid]=m.nick}return out},
   async setNicknameIn(lid,nick){const prev=S.lid;S.lid=lid;try{await this.setNickname(nick)}finally{S.lid=prev}},
   async deleteAccount(){throw new Error("In modalità prova l'account non si può eliminare")},
@@ -334,6 +336,9 @@ const Online={
   },
   async approve(m){this.check(await this.sb.from("members").update({status:"approved"}).eq("id",m.mid));await this.refresh()},
   async removeMember(m){this.check(await this.sb.from("members").delete().eq("id",m.mid));await this.refresh()},
+  async leaveLeague(){const me=myMember();if(!me?.mid)throw new Error("Non fai parte di questa lega");
+    const d=this.check(await this.sb.from("members").delete().eq("id",me.mid).select("id"));if(!d.length)throw new Error("Non è stato possibile abbandonare la lega");await this.refreshLeagues()},
+  async joinOpen(name){const r=await this.sb.rpc("league_join_open",{p_name:(name||"").trim()});return r.error?true:r.data!==false},
   async setNickname(nick){return this.setNicknameIn(S.lid,nick)},
   async setNicknameIn(lid,nick){this.check(await this.sb.rpc("set_nickname",{p_league:lid,p_nickname:nick}));await this.refresh()},
   async myNicknames(){const d=this.check(await this.sb.from("members").select("league_id,nickname").eq("user_id",S.uid));const out={};for(const m of d)out[m.league_id]=m.nickname;return out},
@@ -430,6 +435,7 @@ function openJoin(name){
 function fetchJoinKind(){
   const f=S.form;if(!S.uid||S.modal!=="join"||!f.fromLink||f.kind!==undefined)return;const name=f.name;
   B.leagueType(name).then(k=>{if(S.modal==="join"&&S.form.name===name){S.form.kind=k||"none";render()}}).catch(()=>{});
+  B.joinOpen(name).then(o=>{if(S.modal==="join"&&S.form.name===name){S.form.closed=!o;render()}}).catch(()=>{});
 }
 const inviteUrl=L=>SITE_URL+"#lega="+encodeURIComponent(L.name);
 window.addEventListener("hashchange",()=>{handleHash();render()});
@@ -587,6 +593,9 @@ const ACT={
   removeMemberNo:()=>{S.confirm=null;render()},
   removeMemberOk:d=>{if(!isAdmin())return;const m=S.members.find(x=>x._id===d.u);if(!m)return;safe(async()=>{await B.removeMember(m);S.confirm=null;toast(`${m.nick} rimosso dalla lega`)})},
   delLeagueNo:()=>{S.confirm=null;render()},
+  leaveAsk:()=>{S.confirm="leave";render()},
+  leaveNo:()=>{S.confirm=null;render()},
+  leaveOk:()=>{if(isAdmin())return;const name=league()?.name||"";safe(async()=>{await B.leaveLeague();S.confirm=null;selectLeague(null);pickDefaultLeague();go("home");toast(`Hai abbandonato la lega “${name}”`)})},
   toggleStatus:()=>{S.showStatus=!S.showStatus;render()},
   reloadStatus:()=>{S.pickStatus=null;render()},
   async addAdjust(){if(!isAdmin())return;const F=S.adjForm;const v=Number(String(F.pts).replace(",",".").replace("−","-").trim());
@@ -816,12 +825,13 @@ function vJoin(){
   <label class="small" for="jf-name" style="font-family:var(--f-ui)">Nome lega</label>
   <input type="text" id="jf-name" data-bind="form.name" data-rerender value="${esc(f.name)}" placeholder="Nome lega" autocomplete="off">
   ${missing?`<p class="err">Nessuna lega con questo nome: forse è stata rinominata o eliminata.</p>`:""}
+  ${sameName&&f.closed&&!missing?`<p class="err">La lega è già iniziata: le iscrizioni sono chiuse.</p>`:""}
   ${isPublic?`<p class="small muted" style="font-family:var(--f-ui)">Lega pubblica: non serve la password.</p>`
     :`<label class="small" for="jf-pw" style="font-family:var(--f-ui)">Password lega</label><input type="password" id="jf-pw" data-bind="form.pw" value="${esc(f.pw)}" placeholder="${f.fromLink?"Password lega":"Password lega (solo leghe private)"}" autocomplete="off">`}
   <label class="small" for="jf-nick" style="font-family:var(--f-ui)">Il tuo nickname</label>
   <input type="text" id="jf-nick" data-bind="form.nick" value="${esc(f.nick)}" placeholder="Come ti vedranno gli altri" maxlength="20">
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
-  <button class="btn block" type="submit" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Unisciti"}</button></form>`;
+  <button class="btn block" type="submit" ${S.busy||(sameName&&f.closed)?"disabled":""}>${S.busy?"Attendi…":"Unisciti"}</button></form>`;
 }
 function logoHtml(L){return `<div class="logo">${L.logo?`<img src="${esc(L.logo)}" alt="">`:esc((L.name||"?").trim()[0]?.toUpperCase())}</div>`}
 
@@ -978,7 +988,10 @@ function vInfo(L){
    <tr><td>Criteri spareggio</td><td>1. Miglior punteggio di giornata (MP)<br>2. Miglior quota (MQ)</td></tr>
    <tr><td>Durata</td><td>Dalla ${L.startRound}ª alla 38ª giornata</td></tr>
    <tr><td>Inserimento pronostici</td><td>Fino al fischio d'inizio della giornata</td></tr></tbody></table></section>
-  <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m.bot?` <span class="chip">prova</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ghost" data-act="removeMember" data-u="${m._id}">Rimuovi</button>`:""}</div>${admin&&S.confirm==="rm-"+m._id?`<div class="confirmrow"><p class="small" style="font-family:var(--f-ui)">Rimuovere <b>${esc(m.nick)}</b> dalla lega? Verranno eliminate anche le sue schedine e uscirà dalla classifica. Non si può annullare.</p><div class="row"><button class="btn sm danger" data-act="removeMemberOk" data-u="${m._id}">Rimuovi</button><button class="btn sm sec" data-act="removeMemberNo">Annulla</button></div></div>`:""}`).join("")}</div></section>`;
+  <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m.bot?` <span class="chip">prova</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ghost" data-act="removeMember" data-u="${m._id}">Rimuovi</button>`:""}</div>${admin&&S.confirm==="rm-"+m._id?`<div class="confirmrow"><p class="small" style="font-family:var(--f-ui)">Rimuovere <b>${esc(m.nick)}</b> dalla lega? Verranno eliminate anche le sue schedine e uscirà dalla classifica. Non si può annullare.</p><div class="row"><button class="btn sm danger" data-act="removeMemberOk" data-u="${m._id}">Rimuovi</button><button class="btn sm sec" data-act="removeMemberNo">Annulla</button></div></div>`:""}`).join("")}</div></section>
+  ${admin?`<p class="small muted center" style="font-family:var(--f-ui)">Sei l'admin: per lasciare la lega devi eliminarla dal Pannello admin.</p>`
+   :S.confirm==="leave"?`<section class="card"><h3>Abbandonare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Uscirai dalla lega: verranno eliminate le tue schedine e sparirai dalla classifica. Non si può annullare${calRoundStarted(L.startRound)?", e non potrai rientrare perché la lega è già iniziata":""}.</p><div class="row"><button class="btn danger" data-act="leaveOk">Abbandona</button><button class="btn sec" data-act="leaveNo">Annulla</button></div></section>`
+   :`<section class="card"><button class="btn wide sec leavebtn" data-act="leaveAsk">Abbandona lega</button></section>`}`;
 }
 /* bonus e penalità sotto la classifica generale: trasparenza per tutti */
 function adjustNotes(){const a=S.adjust||[];if(!a.length)return "";const nick=mid=>S.members.find(m=>m.mid===mid)?.nick||"—";

@@ -16,3 +16,9 @@ create table if not exists public.league_adjustments (
 );
 -- RLS: lettura agli iscritti (is_member), inserimento/cancellazione all'admin della lega (is_admin)
 -- league_pick_status / league_password / set_league_password: security definer, vedi migrazione sul progetto
+
+-- v15 (5/11): iscrizioni chiuse dal fischio d'inizio della prima partita della giornata di partenza
+--   · join_league: se la lega è già iniziata → 'La lega è già iniziata: le iscrizioni sono chiuse'
+--     (chi è già iscritto continua a ricevere la propria iscrizione)
+--   · league_join_open(nome): true/false, per avvisare nella finestra d'iscrizione
+-- Abbandona lega: già consentito dalla regola members_delete (il giocatore cancella la propria riga, non l'admin)
