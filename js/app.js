@@ -949,7 +949,6 @@ function vCreate(){
   <section class="card"><div class="q">Criterio di spareggio</div><div class="tiebox"><p><b>1.</b> A pari punti è più in alto chi ha il <b>Miglior punteggio di giornata (MP)</b>: i punti più alti fatti in una singola giornata.</p><p><b>2.</b> Se anche l'MP è uguale, conta la <b>Miglior quota (MQ)</b>: la quota più alta indovinata con un singolo pronostico.</p><p><b>3.</b> Se MP e MQ sono uguali, i giocatori condividono la posizione (es. due secondi posti) e chi segue scala di conseguenza.</p></div></section>
   <section class="card"><div class="q">Giornata di inizio della lega:</div><select id="cf-start" data-bind="form.start">${Array.from({length:38},(_,i)=>`<option value="${i+1}"${+f.start===i+1?" selected":""}>${i+1}° Giornata</option>`).join("")}</select></section>
   <section class="card"><div class="q">Il tuo nickname:</div><input type="text" id="cf-nick" data-bind="form.nick" value="${esc(f.nick)}" maxlength="20" placeholder="Come ti vedranno gli altri"></section>
-  <p class="small muted center" style="font-family:var(--f-ui)">Si gioca in modalità Quote: ogni pronostico indovinato vale i punti della sua quota. Le quote le pubblica l'amministratore prima di ogni giornata.</p>
   <section class="card">${S.formErr?`<p class="err center">${esc(S.formErr)}</p>`:""}<button class="btn wide" data-act="create" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Crea lega"}</button></section>`;
 }
 
