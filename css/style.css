@@ -480,3 +480,4 @@ td.n,th.n{padding-inline:6px}
 .pod.p2 .pbase{height:56px}
 .pod.p3 .pbase{height:40px}
 .pod.me .pnick{text-decoration:underline;text-underline-offset:3px}
+.mini.done .when span:last-child b{font-family:var(--f-num);font-size:15px;color:var(--ink)}

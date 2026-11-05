@@ -633,7 +633,13 @@ function render(){
   <main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
   if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
+  placeNextBar();
 }
+/* barra degli incontri: tiene la posizione scelta dall'utente, altrimenti parte dalla prima partita non finita */
+function placeNextBar(){const bar=document.getElementById("next-bar");if(!bar)return;const key=bar.dataset.round;
+  if(S.nextScroll&&S.nextScroll.k===key)bar.scrollLeft=S.nextScroll.x;
+  else{const first=bar.querySelector(".mini:not(.done)");bar.scrollLeft=first?first.offsetLeft-bar.offsetLeft-2:bar.scrollWidth}
+  bar.addEventListener("scroll",()=>{S.nextScroll={k:key,x:bar.scrollLeft}},{passive:true})}
 function renderAdminPage(needLogin){
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
@@ -769,9 +775,11 @@ function vHome(L){
   html+=`<button type="button" class="card statcard" data-act="go" data-s="classifica" aria-label="Vai alla classifica"><span class="stathead"><span class="statnick">${esc(myMember()?.nick||"")}</span><span class="golink">Vai alla classifica ›</span></span><span class="stats"><span><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></span><span><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></span><span><b>${mine&&mine.mp?f2(mine.mp):"0.00"}</b><span>Miglior punt.</span></span></span></button>`;
   /* le partite si vedono sempre (gli accoppiamenti sono fissi), anche prima che le quote siano pubblicate */
   if(r&&r.matches.length){
-    const upcoming=r.matches.filter(m=>!esito(m));const show=upcoming.length?upcoming:r.matches;
-    html+=`<div class="nextwrap"><div class="nexthead"><span class="disp">${upcoming.length?"Prossimi incontri":"Risultati"}</span><span class="small muted">${r.n}ª giornata</span></div>
-    <div class="next">${show.map(m=>`<div class="mini"><div class="teams">${crest(m.home)}<span>${abbr(m.home)} - ${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:(m.kickoff?`<span>${fmtDay(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`:`<span>${m.day?fmtDay(m.day):"—"}</span><span>da definire</span>`)}</div></div>`).join("")}</div></div>`;
+    /* tutte le partite in ordine di orario: quelle finite mostrano il risultato; la barra parte dalla prima non ancora finita */
+    const upcoming=r.matches.filter(m=>!esito(m));const kt=m=>{const t=Date.parse(m.kickoff||m.day||"");return isNaN(t)?Infinity:t};
+    const show=[...r.matches].sort((a,b)=>kt(a)-kt(b)||a.id-b.id);
+    html+=`<div class="nextwrap"><div class="nexthead"><span class="disp">${!upcoming.length?"Risultati":upcoming.length<r.matches.length?"Incontri":"Prossimi incontri"}</span><span class="small muted">${r.n}ª giornata</span></div>
+    <div class="next" id="next-bar" data-round="${r.n}">${show.map(m=>`<div class="mini${esito(m)?" done":""}"><div class="teams">${crest(m.home)}<span>${abbr(m.home)} - ${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:(m.kickoff?`<span>${fmtDay(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`:`<span>${m.day?fmtDay(m.day):"—"}</span><span>da definire</span>`)}</div></div>`).join("")}</div></div>`;
   }
   return html;
 }
