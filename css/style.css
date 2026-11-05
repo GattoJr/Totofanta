@@ -538,3 +538,6 @@ td.n,th.n{padding-inline:6px}
 .adminbtn{width:100%;margin:0}
 .adjform button{grid-column:auto}
 .kv .code{font-size:15px;padding:2px 8px;letter-spacing:.04em}
+/* iPhone: i pulsanti hanno un padding di sistema che sposta l'icona; la si centra in modo esplicito */
+.iconbtn,.avatar{padding:0;-webkit-appearance:none;appearance:none;display:flex;align-items:center;justify-content:center;flex:none}
+.iconbtn svg{display:block;flex:none;margin:0}
