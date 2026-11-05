@@ -757,7 +757,9 @@ function vDrawer(){
     :`<label class="small" for="who-sel">Stai giocando come</label><select id="who-sel">${S.localUsers.map(u=>`<option value="${u.id}"${u.id===S.uid?" selected":""}>${esc(u.name)}</option>`).join("")}</select><button class="btn" data-act="addLocal">+ Nuovo giocatore</button><button class="btn" data-act="openProfile">Profilo</button>`;
   const mine=myLeagues();
   /* cambio lega (solo con più leghe): un menu a tendina nella parte blu */
-  const sw=mine.length>1?`<label class="lswitch"><span class="lsl">Lega</span><span class="lsn">${esc(L?.name||"")}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><select id="league-sel" aria-label="Cambia lega">${mine.map(x=>`<option value="${x._id}"${x._id===S.lid?" selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`:"";
+  /* riquadro della lega sempre visibile; con più leghe ha la freccia e apre il menu a tendina */
+  const sw=L?(mine.length>1?`<label class="lswitch"><span class="lsl">Lega</span><span class="lsn">${esc(L.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><select id="league-sel" aria-label="Cambia lega">${mine.map(x=>`<option value="${x._id}"${x._id===S.lid?" selected":""}>${esc(x.name)}</option>`).join("")}</select></label>`
+    :`<div class="lswitch single"><span class="lsl">Lega</span><span class="lsn">${esc(L.name)}</span></div>`):"";
   return `<div class="scrim" data-act="closeAll"></div><aside class="drawer" aria-label="Menu">
   <div class="head">${who}${ONLINE?`<button class="logoutbtn" data-act="logout">${I.logout}Logout</button>`:""}${sw}</div>
   <nav>
