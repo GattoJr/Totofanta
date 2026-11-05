@@ -1,5 +1,5 @@
 -- =====================================================================
--- TOTOFANTA · v7 · quote automatiche (The Odds API, funzione sync-quote)
+-- TOTOFANTA · v10 · quote automatiche (The Odds API, funzione sync-quote)
 -- =====================================================================
 
 -- Quote: origine, protezione "manuale", numero di bookmaker usati

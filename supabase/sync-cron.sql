@@ -23,7 +23,7 @@ $$);
 
 -- per toglierle: select cron.unschedule('sync-calendario-mattina'); select cron.unschedule('sync-risultati-orario');
 
--- QUOTE (v7, funzione sync-quote con il secret ODDS_API_KEY): controllo ogni 5 minuti,
+-- QUOTE (v10, funzione sync-quote con il secret ODDS_API_KEY): controllo ogni 5 minuti,
 -- la logica (8–21 ora italiana, 30' prima della prima partita, pausa a giornata in corso)
--- è in private.odds_tick() → vedi migrazione-v7-quote.sql
+-- è in private.odds_tick() → vedi migrazione-v10-quote.sql
 -- per toglierla: select cron.unschedule('sync-quote-tick');
