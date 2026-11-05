@@ -12,6 +12,7 @@
 //   NON BLOCCANTI (la quota viene applicata, avviso in admin):
 //     · salto oltre il 25% rispetto all'ultimo aggiornamento, o cambio della favorita
 // Non tocca: partite con quota "manuale", giornate già iniziate (bloccate anche dal database).
+// Scrive solo le quote cambiate rispetto a quelle salvate.
 // Pubblica in automatico le giornate con tutte e 10 le partite pronte (orario e quote).
 //
 // Chiamata: POST { "dry": true } per una prova senza scrivere niente.
@@ -122,7 +123,8 @@ Deno.serve(async (req) => {
     });
   };
 
-  const updates: any[] = [], alerts: any[] = [];
+  const updates: any[] = [], alerts: any[] = [], passed: number[] = [];
+  let unchanged = 0;
   const unmatched: any[] = [], skipped: any[] = [];
   for (const ev of events) {
     const home = teamOf(ev.home_team), away = teamOf(ev.away_team);
@@ -161,6 +163,10 @@ Deno.serve(async (req) => {
       continue;
     }
 
+    passed.push(f.id);
+    // quota identica a quella già salvata: non si riscrive (niente traffico inutile verso i giocatori)
+    if (cur && cur.source === "api" && Number(cur.o1) === o1 && Number(cur.ox) === ox && Number(cur.o2) === o2) { unchanged++; continue; }
+
     // salto improvviso (solo rispetto a una quota automatica precedente): avviso, ma la quota si applica
     if (cur && cur.source === "api") {
       const prev = [Number(cur.o1), Number(cur.ox), Number(cur.o2)], next = [o1, ox, o2];
@@ -183,10 +189,9 @@ Deno.serve(async (req) => {
         updates.map(({ fixture_id, o1, ox, o2, books }) => ({ fixture_id, o1, ox, o2, books, manual: false, source: "api" })),
         { onConflict: "fixture_id" });
       if (error) failed.push({ step: "quote", error: error.message });
-      // le partite tornate a posto perdono l'avviso bloccante
-      const ok = updates.map((u) => u.fixture_id);
-      await db.from("odds_alerts").delete().in("fixture_id", ok).eq("blocking", true);
     }
+    // le partite che passano i controlli perdono l'eventuale avviso bloccante
+    if (passed.length) await db.from("odds_alerts").delete().in("fixture_id", passed).eq("blocking", true);
     if (alerts.length) {
       const { error } = await db.from("odds_alerts").upsert(
         alerts.map(({ match: _m, ...a }) => ({ ...a, created_at: new Date().toISOString() })), { onConflict: "fixture_id" });
@@ -207,7 +212,7 @@ Deno.serve(async (req) => {
 
   const summary = {
     reason, dry, ...quota, apiEvents: events.length,
-    updated: updates.length, updates, alerts, published, unmatched, skipped, failed,
+    updated: updates.length, unchanged, updates, alerts, published, unmatched, skipped, failed,
   };
   await log(failed.length === 0 && unmatched.length === 0, summary);
   return json(summary);

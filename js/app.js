@@ -178,8 +178,15 @@ const Online={
     });
     const {data}=await this.sb.auth.getSession();
     await this.onSession(data.session);
-    setInterval(()=>{if(S.uid&&document.visibilityState!=="hidden")this.refresh()},60000);
-    document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&S.uid)this.refresh()});
+    /* ogni minuto, senza rete: se una giornata è appena iniziata si ricaricano le schedine della lega (da lì sono visibili a tutti).
+       Ogni 5 minuti, di scorta agli aggiornamenti in tempo reale: solo le partite e le quote cambiate (di solito nessuna). */
+    this.lastSync=Date.now();
+    setInterval(()=>{if(!S.uid||document.visibilityState==="hidden")return;
+      const locked=S.rounds.filter(r=>roundLocked(r)).length;if(this.lockedCount!=null&&locked!==this.lockedCount&&S.lid)this.loadLeague(S.lid).then(render);this.lockedCount=locked;
+      if(Date.now()-this.lastSync>=5*60e3){this.lastSync=Date.now();this.loadFixtures({light:true}).then(render)}},60000);
+    /* tornando sul sito dopo almeno un minuto: aggiornamento (calendario sempre incrementale) */
+    document.addEventListener("visibilitychange",()=>{if(!S.uid)return;if(document.visibilityState==="hidden"){this.hiddenAt=Date.now();return}
+      if(Date.now()-(this.hiddenAt||0)>60e3){this.lastSync=Date.now();this.refresh()}});
   },
   async onSession(session){
     const uid=session?.user?.id||null;
@@ -199,11 +206,20 @@ const Online={
   },
   subscribe(){
     const ch=this.sb.channel("tf-"+S.uid);
-    for(const t of ["leagues","members","picks"])ch.on("postgres_changes",{event:"*",schema:"public",table:t},()=>this.refreshSoon());
-    for(const t of ["fixtures","odds","calendar_rounds","odds_alerts"])ch.on("postgres_changes",{event:"*",schema:"public",table:t},()=>{clearTimeout(this.tf);this.tf=setTimeout(()=>this.loadFixtures().then(render),400)});
+    const on=(t,fn)=>ch.on("postgres_changes",{event:"*",schema:"public",table:t},fn);
+    on("leagues",()=>this.refreshSoon());
+    on("members",()=>this.refreshSoon());
+    /* i propri pronostici sono già aggiornati in pagina dopo il salvataggio: si ricarica la lega solo per quelli degli altri */
+    on("picks",p=>{const row=p.new&&p.new.member_id?p.new:p.old;const me=myMember();if(me&&row&&row.member_id===me.mid)return;this.leagueSoon()});
+    on("fixtures",p=>{if(p.new&&p.new.id){this.putFx(p.new);this.calChanged()}});
+    on("odds",p=>{if(p.eventType==="DELETE"){if(p.old?.fixture_id)this.od.delete(p.old.fixture_id)}else if(p.new?.fixture_id)this.putOd(p.new);this.calChanged()});
+    on("calendar_rounds",async p=>{const r=p.new;if(!r?.n)return;if(r.published){S.calRounds[r.n]=true;await this.loadRoundOdds(r.n)}else delete S.calRounds[r.n];this.calChanged()});
+    on("odds_alerts",()=>{if(S.siteAdmin){clearTimeout(this.ta);this.ta=setTimeout(()=>this.loadAdminExtras().then(render),400)}});
     ch.subscribe();this.chan=ch;
   },
   refreshSoon(){clearTimeout(this.t);this.t=setTimeout(()=>this.refresh(),250)},
+  leagueSoon(){clearTimeout(this.tl);this.tl=setTimeout(()=>{if(S.lid)this.loadLeague(S.lid).then(render)},300)},
+  calChanged(){clearTimeout(this.tf);this.tf=setTimeout(()=>{this.calSave();this.calApply();render()},300)},
   async refresh(){await Promise.all([this.refreshLeagues(),this.loadFixtures()]);if(S.lid)await this.loadLeague(S.lid);render()},
   async refreshLeagues(){
     const {data,error}=await this.sb.from("leagues").select("*").order("created_at");
@@ -213,17 +229,40 @@ const Online={
     if(S.lid&&!S.me.leagues.includes(S.lid))pickDefaultLeague();
   },
   openLeague(lid){if(lid)this.loadLeague(lid).then(render)},
-  async loadFixtures(){
-    const sb=this.sb;
-    const [f,o,c,a]=await Promise.all([sb.from("fixtures").select("*").order("id"),sb.from("odds").select("*"),sb.from("calendar_rounds").select("n,published"),sb.from("site_admins").select("user_id").eq("user_id",S.uid)]);
-    if(f.error){console.warn("Calendario non disponibile",f.error);S.fixtures=[];S.siteAdmin=false;return}
-    S.fixtures=f.data.map(x=>({id:x.id,n:x.n,pos:x.pos,home:x.home,away:x.away,kickoff:x.kickoff||null,day:x.day,hg:x.hg??null,ag:x.ag??null}));
-    S.odds={};if(!o.error)for(const x of o.data)S.odds[x.fixture_id]={o1:Number(x.o1),oX:Number(x.ox),o2:Number(x.o2),manual:!!x.manual,source:x.source,at:x.updated_at};
-    S.calRounds={};if(!c.error)for(const x of c.data)if(x.published)S.calRounds[x.n]=true;
-    S.siteAdmin=!a.error&&a.data.length>0;
-    if(S.siteAdmin){const [al,lg]=await Promise.all([sb.from("odds_alerts").select("*"),sb.from("sync_log").select("ran_at,ok,summary").eq("kind","quote").order("ran_at",{ascending:false}).limit(1)]);
-      S.oddsAlerts=al.error?[]:al.data;S.oddsSync=lg.error?null:(lg.data[0]||null)}else{S.oddsAlerts=[];S.oddsSync=null}
+  /* ---- calendario e quote: copia salvata nel browser, si scarica solo ciò che è cambiato (updated_at) ---- */
+  calKey(){return "totofanta-cal-v1:"+S.uid},
+  calLoad(){this.fx=new Map();this.od=new Map();this.fxMax=null;this.odMax=null;
+    try{const c=JSON.parse(lsGet(this.calKey())||"null");if(c&&Array.isArray(c.fx)&&c.fx.length){for(const x of c.fx)this.fx.set(x.id,x);for(const [k,v] of c.od||[])this.od.set(+k,v);this.fxMax=c.fxMax||null;this.odMax=c.odMax||null}}catch{}},
+  calSave(){lsSet(this.calKey(),JSON.stringify({fx:[...this.fx.values()],od:[...this.od.entries()],fxMax:this.fxMax,odMax:this.odMax}))},
+  putFx(x){this.fx.set(x.id,x);if(!this.fxMax||Date.parse(x.updated_at)>Date.parse(this.fxMax))this.fxMax=x.updated_at},
+  putOd(x){this.od.set(x.fixture_id,x);if(!this.odMax||Date.parse(x.updated_at)>Date.parse(this.odMax))this.odMax=x.updated_at},
+  calApply(){
+    S.fixtures=[...this.fx.values()].sort((a,b)=>a.id-b.id).map(x=>({id:x.id,n:x.n,pos:x.pos,home:x.home,away:x.away,kickoff:x.kickoff||null,day:x.day,hg:x.hg??null,ag:x.ag??null}));
+    /* le quote di una giornata ritirata non si mostrano più (tranne all'admin del sito) */
+    S.odds={};for(const [id,x] of this.od)if(S.siteAdmin||S.calRounds[Math.floor(id/100)])S.odds[id]={o1:Number(x.o1),oX:Number(x.ox),o2:Number(x.o2),manual:!!x.manual,source:x.source,at:x.updated_at};
   },
+  async loadRoundOdds(n){const {data,error}=await this.sb.from("odds").select("*").gte("fixture_id",n*100+1).lte("fixture_id",n*100+10);if(!error)for(const x of data)this.putOd(x)},
+  async loadFixtures(opt={}){
+    const sb=this.sb;
+    if(this.calUid!==S.uid){this.calUid=S.uid;this.calLoad()}
+    /* piccolo margine (2 secondi) sull'ultimo aggiornamento visto, per non perdere righe salvate nello stesso istante */
+    const since=t=>new Date(Date.parse(t)-2e3).toISOString();
+    let fq=sb.from("fixtures").select("*");if(this.fxMax)fq=fq.gt("updated_at",since(this.fxMax));
+    let oq=sb.from("odds").select("*");if(this.odMax)oq=oq.gt("updated_at",since(this.odMax));
+    const [f,o,c,a]=await Promise.all([fq,oq,opt.light?null:sb.from("calendar_rounds").select("n,published"),opt.light?null:sb.from("site_admins").select("user_id").eq("user_id",S.uid)]);
+    if(f.error){console.warn("Calendario non disponibile",f.error);if(!this.fx.size){S.fixtures=[];S.siteAdmin=false;return}}
+    else for(const x of f.data)this.putFx(x);
+    if(!o.error)for(const x of o.data)this.putOd(x);
+    if(c&&!c.error){S.calRounds={};for(const x of c.data)if(x.published)S.calRounds[x.n]=true}
+    if(a)S.siteAdmin=!a.error&&a.data.length>0;
+    /* giornate pubblicate di cui non ho ancora tutte le quote (es. pubblicate mentre ero offline): solo quella giornata */
+    const missing=Object.keys(S.calRounds).map(Number).filter(n=>{let k=0;for(let i=1;i<=10;i++)if(this.od.has(n*100+i))k++;return k<10});
+    await Promise.all(missing.map(n=>this.loadRoundOdds(n)));
+    if(S.siteAdmin&&!opt.light)await this.loadAdminExtras();else if(!S.siteAdmin){S.oddsAlerts=[];S.oddsSync=null}
+    this.calSave();this.calApply();
+  },
+  async loadAdminExtras(){const sb=this.sb;const [al,lg]=await Promise.all([sb.from("odds_alerts").select("*"),sb.from("sync_log").select("ran_at,ok,summary").eq("kind","quote").order("ran_at",{ascending:false}).limit(1)]);
+    S.oddsAlerts=al.error?[]:al.data;S.oddsSync=lg.error?null:(lg.data[0]||null)},
   async saveFixtures(changes){
     const sb=this.sb;
     for(const c of changes){
@@ -819,7 +858,7 @@ function vPicks(L){
   if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
   const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=!roundLocked(r);
   if(anyOpen&&ONLINE){const ts=r.matches.map(m=>S.odds[m.id]?.at).filter(Boolean).sort();const last=ts[ts.length-1];
-    html+=`<p class="small muted oddsnote">Quote provvisorie: si aggiornano fino al fischio d'inizio della prima partita e i punti si calcolano su quelle finali${last?` · aggiornate ${fmtStamp(last)}`:""}</p>`}
+    html+=`<p class="small muted oddsnote">Quote provvisorie: si aggiornano fino al fischio d'inizio della prima partita e i punti si calcolano su quelle finali${last?` · ultima variazione ${fmtStamp(last)}`:""}</p>`}
   html+=r.matches.map(m=>{
     const locked=roundLocked(r);const started=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
