@@ -490,3 +490,51 @@ td.n,th.n{padding-inline:6px}
 .rkname{overflow-wrap:break-word}
 .rkname.long{font-size:32px}
 .summary.two{grid-template-columns:1fr 1fr}
+
+/* ---- Home: titolo della lega ---- */
+.ltitle{display:flex;align-items:center;gap:6px;background:none;border:0;padding:2px 2px 0;margin:0;color:var(--ink);cursor:pointer;text-align:left;max-width:100%}
+.ltitle .ltn{font-family:var(--f-disp,var(--f-title));font-weight:800;font-size:34px;line-height:1;text-transform:uppercase;letter-spacing:.01em;overflow-wrap:break-word;min-width:0}
+.ltitle .ltn.long{font-size:28px}
+.ltitle svg{width:26px;height:26px;flex:none;color:var(--blue)}
+.ltitle:focus-visible{outline:2px solid var(--blue);outline-offset:4px;border-radius:6px}
+
+/* ---- Menu: cambio lega nella parte blu ---- */
+.lswitch{position:relative;display:flex;align-items:center;gap:8px;margin-top:4px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);border-radius:12px;padding:9px 12px;cursor:pointer}
+.lswitch .lsl{font:500 12px var(--f-ui);opacity:.85}
+.lswitch .lsn{flex:1;min-width:0;font:700 15px var(--f-ui);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lswitch svg{width:18px;height:18px;flex:none}
+.lswitch select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
+.lswitch:focus-within{outline:2px solid #fff;outline-offset:2px}
+
+/* ---- Pagina lega ---- */
+.lhero .chip{display:inline-block;margin-top:2px}
+.adminbtn{display:flex;align-items:center;justify-content:center;gap:8px}
+.adminbtn svg{width:18px;height:18px}
+.nickcard{padding:12px 14px}
+.nickrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px}
+.nickrow label{font-family:var(--f-ui);white-space:nowrap}
+.nickrow input{padding:7px 10px;font-size:15px;min-width:0}
+.kv td{vertical-align:top}
+
+/* ---- Pannello admin della lega ---- */
+.lhero .eyebrow{font-size:12px}
+.pstat{display:flex;align-items:center;gap:12px;background:var(--field);border:0;border-radius:10px;padding:12px;font:inherit;color:var(--ink);text-align:left;cursor:pointer;width:100%}
+.pstat .pnum{font-family:var(--f-num,var(--f-title));font-size:15px;white-space:nowrap}
+.pstat .pnum b{font-size:30px}
+.pstat .grow{font-family:var(--f-ui);font-size:14px}
+.pstat .pgo{font:600 13px var(--f-ui);color:var(--blue-text);white-space:nowrap}
+.pbar{height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.pbar span{display:block;height:100%;background:var(--win)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.dot.ok{background:var(--win)}
+.dot.no{background:var(--lose)}
+.adjform{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.adjform select,.adjform #adj-why{grid-column:1/-1}
+.adjform button{grid-column:2}
+.adjmark{display:inline-block;font:700 12px var(--f-ui);border-radius:6px;padding:1px 6px;white-space:nowrap}
+.adjmark.pos{background:var(--win-soft);color:var(--win)}
+.adjmark.neg{background:var(--lose-soft);color:var(--lose)}
+.adjlist{border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:4px;font-family:var(--f-ui)}
+.adminbtn{width:100%;margin:0}
+.adjform button{grid-column:auto}
+.kv .code{font-size:15px;padding:2px 8px;letter-spacing:.04em}
