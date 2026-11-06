@@ -1,0 +1,56 @@
+# Totofanta · backup settimanale del database
+# Ogni domenica alle 4:45 UTC scarica una copia completa del database Supabase (ruoli, struttura, dati),
+# la cifra con una frase segreta e la conserva come allegato dell'esecuzione per 90 giorni.
+# Il repository è pubblico: la copia NON viene mai salvata nel codice e senza la frase segreta è illeggibile.
+# Segreti necessari (Settings › Secrets and variables › Actions):
+#   SUPABASE_DB_URL     stringa di connessione "Session pooler" di Supabase, con la password del database
+#   BACKUP_PASSPHRASE   frase segreta per cifrare la copia (conservarla: senza non si può ripristinare)
+# Ripristino: scaricare l'allegato, poi
+#   gpg --batch --passphrase "<frase>" -d totofanta-backup-<data>.tar.gz.gpg | tar xz
+#   e caricare roles.sql, schema.sql, data.sql in un progetto Supabase (guida "Backup and restore using the CLI").
+name: Backup settimanale database
+on:
+  schedule:
+    - cron: "45 4 * * 0"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Controlla i segreti
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          [ -n "$DB" ] || { echo "Manca il segreto SUPABASE_DB_URL"; exit 1; }
+          [ ${#PASS} -ge 12 ] || { echo "Manca il segreto BACKUP_PASSPHRASE (almeno 12 caratteri)"; exit 1; }
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Scarica ruoli, struttura e dati
+        env:
+          DB: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir backup
+          supabase db dump --db-url "$DB" -f backup/roles.sql --role-only
+          supabase db dump --db-url "$DB" -f backup/schema.sql
+          supabase db dump --db-url "$DB" -f backup/data.sql --use-copy --data-only
+          ls -la backup
+          [ -s backup/schema.sql ] && [ -s backup/data.sql ] || { echo "Copia vuota"; exit 1; }
+      - name: Cifra la copia
+        env:
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          name="totofanta-backup-$(date -u +%Y-%m-%d).tar.gz"
+          tar czf "$name" backup
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$PASS" --symmetric --cipher-algo AES256 -o "$name.gpg" "$name"
+          rm -rf backup "$name"
+          echo "FILE=$name.gpg" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FILE }}
+          path: ${{ env.FILE }}
+          retention-days: 90
+          if-no-files-found: error
