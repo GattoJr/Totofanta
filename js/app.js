@@ -67,7 +67,7 @@ const S={
   leagues:[],me:{leagues:[]},meLoaded:false,invite:{},
   lid:null,members:[],rounds:[],picks:[],loaded:{members:false,rounds:false,picks:false},
   screen:"home",drawer:false,modal:null,help:null,
-  roundSel:null,rankView:"gen",
+  roundSel:null,rankView:"gen",resN:null,
   form:{},formErr:"",authForm:{mode:"login",email:"",pw:"",pw2:""},authMsg:"",busy:false,
   confirm:null,showOthers:false,draft:{},leave:null,flash:"",
   localUsers:[],
@@ -674,6 +674,7 @@ app.addEventListener("change",e=>{const t=e.target;
   if(t.id==="who-sel")return switchLocal(t.value);
   if(t.id==="league-sel"){selectLeague(t.value);return}
   if(t.id==="cal-n"){S.calN=+t.value;render();return}
+  if(t.id==="res-n"){S.resN=+t.value;render();return}
   if(t.id==="adm-n"){S.admN=+t.value;S.admEdit=null;S.formErr="";render();return}
   if(t.id==="cf-logo"&&t.files[0]){const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement("canvas");c.width=c.height=128;const x=c.getContext("2d");const s=Math.min(img.width,img.height);x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,128,128);S.form.logo=c.toDataURL("image/jpeg",.85);render()};img.src=fr.result};fr.readAsDataURL(t.files[0])}
 });
@@ -692,6 +693,7 @@ const I={
   back:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>`,
   home:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>`,
   slip:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h2M8 12h2M8 16h2M14 8h2M14 12h2M14 16h2"/></svg>`,
+  grid:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16M10 4v16"/></svg>`,
   rank:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 20V12h5v8M9 20V6h6v14M15 20v-5h5v5M3 20h18"/></svg>`,
   league:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.3 3-5 6-5s5.4 1.7 6 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16.5 13.6c2.4 0 4 1.5 4.5 4.4"/></svg>`,
 };
@@ -750,7 +752,7 @@ function banners(){
 }
 function vNav(){
   const L=league();const pend=isAdmin()?S.members.filter(m=>m.status==="pending").length:0;
-  const items=[["home","Home",I.home],["classifica","Classifica",I.rank]];
+  const items=[["home","Home",I.home],["classifica","Classifica",I.rank],["risultati","Risultati",I.grid]];
   const cur=S.screen==="admin"?"lega":S.screen==="pronostici"?"home":S.screen;
   return `<nav class="nav" aria-label="Sezioni"><div class="col">${items.map(([k,t,ic])=>`<button data-act="go" data-s="${k}" ${cur===k?'aria-current="page"':""} ${!L&&k!=="home"?"disabled":""}>${ic}<span>${t}</span>${k==="lega"&&pend?`<span class="dot">${pend}</span>`:""}</button>`).join("")}</div></nav>`;
 }
@@ -849,6 +851,7 @@ function vLeagueScreen(L){
   switch(S.screen){
     case "pronostici":return vPicks(L);
     case "classifica":return vStandings(L);
+    case "risultati":return vResults(L);
     case "lega":return vInfo(L);
     case "admin":return isAdmin()?vAdmin(L):vInfo(L);
     default:return vHome(L);
@@ -933,6 +936,38 @@ function vOthers(r){
   const body=approved().map(pl=>{const pk=pickDoc(r._id,pl._id)?.picks||{};const s=roundScore(r,pl._id);
     return `<tr class="${pl._id===S.uid?"me":""}"><td>${esc(pl.nick)}</td>${r.matches.map(m=>{const p=pk[m.id];const e=esito(m);return `<td class="c ${e&&p?(p===e?"won":"lost"):""}">${p||"–"}</td>`}).join("")}<td class="n">${f2(s.pts)}</td></tr>`}).join("");
   return `<section class="card"><div class="row"><h3 class="grow">Schedine della ${r.n}ª giornata</h3><button class="btn ghost sm" data-act="others">Nascondi</button></div><div class="tbl"><table><thead><tr><th>Giocatore</th>${head}<th class="n">Pt</th></tr></thead><tbody>${body}</tbody></table></div></section>`;
+}
+
+/* ---- Risultati: matrice partite × giocatori della giornata scelta ----
+   Le schedine degli altri si leggono dal fischio d'inizio della giornata: nel menu solo giornate iniziate.
+   I punti si ricalcolano a ogni risultato scritto nel database (evento in tempo reale su fixtures). */
+function vResults(L){
+  const list=S.rounds.filter(r=>roundVisible(r)&&roundLocked(r)).sort((a,b)=>b.n-a.n);
+  let html=`<div class="phdr"><h2 class="pagetitle">Risultati</h2></div>`;
+  if(!list.length){const nx=S.rounds.find(r=>roundVisible(r)&&!roundLocked(r));const fk=nx&&firstKick(nx);
+    return html+`<section class="card"><p class="cta-title">Ancora nessuna giornata giocata</p><p class="center small muted" style="font-family:var(--f-ui)">${fk?`I pronostici di tutti saranno visibili dal fischio d'inizio della ${nx.n}ª giornata, ${fmtDow(fk)} alle ${fmtTime(fk)}.`:"I pronostici di tutti si vedono dal fischio d'inizio della prima partita di ogni giornata."}</p></section>`}
+  const r=list.find(x=>x.n===S.resN)||list[0];
+  const st=r2=>roundDone(r2)?"Conclusa":"In corso";
+  html+=`<div class="ressel"><label for="res-n">Giornata</label><div class="selwrap"><select id="res-n">${list.map(x=>`<option value="${x.n}"${x.n===r.n?" selected":""}>${x.n}ª giornata · ${st(x)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div>`;
+  /* giocatori in ordine di punti della giornata (pari punti: miglior quota, poi nome) */
+  const pl=approved().map(m=>({m,pk:pickDoc(r._id,m._id)?.picks||{},...roundScore(r,m._id)})).sort((a,b)=>(b.pts-a.pts)||(b.best-a.best)||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
+  pl.forEach((d,i)=>{const p=pl[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
+  const me=pl.find(d=>d.m._id===S.uid);
+  /* la propria colonna per prima (sul telefono è sempre visibile), poi gli altri in ordine di punti */
+  const cols=me?[me,...pl.filter(d=>d!==me)]:pl;const nDone=r.matches.filter(m=>esito(m)).length;
+  html+=`<section class="card"><div class="summary"><div><b>${nDone}/${r.matches.length}</b><span>Partite finite</span></div><div><b>${me?f2(me.pts):"–"}</b><span>I tuoi punti</span></div><div><b>${me?me.pos+"°":"–"}</b><span>Di giornata</span></div></div>
+   ${roundDone(r)?"":`<p class="center small muted" style="font-family:var(--f-ui)">Giornata in corso: i punti si aggiornano da soli a ogni risultato.</p>`}</section>`;
+  const head=cols.map(d=>`<th class="pc${d.m._id===S.uid?" me":""}" title="${esc(d.m.nick)}"><span class="pnm">${d===me?"Tu":esc(d.m.nick)}</span></th>`).join("");
+  const rows=r.matches.map(m=>{const e=esito(m);const started=matchLocked(r,m);
+    const state=e?`<b>${m.hg}-${m.ag}</b> · ${e} ${oddOf(m,e)?oddOf(m,e).toFixed(2):""}`:started?`<span class="live">In corso</span>`:`${m.kickoff?fmtDow(m.kickoff)+" "+fmtTime(m.kickoff):"da giocare"}`;
+    return `<tr><th class="mt" scope="row"><span class="mtt">${esc(abbr(m.home))}–${esc(abbr(m.away))}</span><span class="mts">${state}</span></th>${cols.map(d=>{const p=d.pk[m.id];
+      const cls=!p?"none":!e?"wait":p===e?"won":"lost";
+      const inner=!p?"–":p===e?`<b>${p}</b><i>+${oddOf(m,p).toFixed(2)}</i>`:`<b>${p}</b>`;
+      return `<td class="rc ${cls}${d.m._id===S.uid?" me":""}">${inner}</td>`}).join("")}</tr>`}).join("");
+  const foot=`<tr class="tot"><th class="mt" scope="row">Totale</th>${cols.map(d=>`<td class="rc${d.m._id===S.uid?" me":""}"><b>${f2(d.pts)}</b><i>${d.pos}°</i></td>`).join("")}</tr>`;
+  html+=`<section class="card"><div class="tbl rmx"><table><thead><tr><th class="mt">Partita</th>${head}</tr></thead><tbody>${rows}</tbody><tfoot>${foot}</tfoot></table></div>
+   <p class="small muted rlegend"><span class="lg won">Indovinato</span><span class="lg lost">Sbagliato</span><span class="lg wait">In attesa</span>Dopo la tua colonna, gli altri in ordine di punti della giornata.</p></section>`;
+  return html;
 }
 
 /* ---- Classifica (5.1) ---- */
