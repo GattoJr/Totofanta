@@ -67,7 +67,7 @@ const S={
   leagues:[],me:{leagues:[]},meLoaded:false,invite:{},
   lid:null,members:[],rounds:[],picks:[],loaded:{members:false,rounds:false,picks:false},
   screen:"home",drawer:false,modal:null,help:null,
-  roundSel:null,rankView:"gen",resN:null,
+  roundSel:null,rankView:"gen",resN:null,scores:null,
   form:{},formErr:"",authForm:{mode:"login",email:"",pw:"",pw2:""},authMsg:"",busy:false,
   confirm:null,showOthers:false,draft:{},leave:null,flash:"",
   localUsers:[],
@@ -185,11 +185,11 @@ const Online={
     });
     const {data}=await this.sb.auth.getSession();
     await this.onSession(data.session);
-    /* ogni minuto, senza rete: se una giornata è appena iniziata si ricaricano le schedine della lega (da lì sono visibili a tutti).
+    /* ogni minuto, senza rete: se una giornata è appena iniziata si ridisegna (le schedine di quella giornata si scaricano quando servono).
        Ogni 5 minuti, di scorta agli aggiornamenti in tempo reale: solo le partite e le quote cambiate (di solito nessuna). */
     this.lastSync=Date.now();
     setInterval(()=>{if(!S.uid||document.visibilityState==="hidden")return;
-      const locked=S.rounds.filter(r=>roundLocked(r)).length;if(this.lockedCount!=null&&locked!==this.lockedCount&&S.lid)this.loadLeague(S.lid).then(render);this.lockedCount=locked;
+      const locked=S.rounds.filter(r=>roundLocked(r)).length;if(this.lockedCount!=null&&locked!==this.lockedCount&&S.lid)render();this.lockedCount=locked;
       if(Date.now()-this.lastSync>=5*60e3){this.lastSync=Date.now();this.loadFixtures({light:true}).then(render)}},60000);
     /* tornando sul sito dopo almeno un minuto: aggiornamento (calendario sempre incrementale) */
     document.addEventListener("visibilitychange",()=>{if(!S.uid)return;if(document.visibilityState==="hidden"){this.hiddenAt=Date.now();return}
@@ -221,7 +221,11 @@ const Online={
     on("members",()=>this.refreshSoon());
     on("league_adjustments",()=>this.leagueSoon());
     /* i propri pronostici sono già aggiornati in pagina dopo il salvataggio: si ricarica la lega solo per quelli degli altri */
-    on("picks",p=>{const row=p.new&&p.new.member_id?p.new:p.old;const me=myMember();if(me&&row&&row.member_id===me.mid)return;this.leagueSoon()});
+    on("picks",p=>{const row=p.new&&p.new.member_id?p.new:p.old;const me=myMember();if(me&&row&&row.member_id===me.mid)return;
+      const n=row&&row.fixture_id?Math.floor(row.fixture_id/100):null;if(n&&this.pkRounds.has(n))this.roundPicksSoon(n)});
+    /* punti salvati dal database: la riga ricevuta si applica direttamente, senza scaricare nulla */
+    on("round_scores",p=>{if(p.eventType==="DELETE"){const o=p.old||{};const i=(S.scores||[]).findIndex(x=>x.mid===o.member_id&&x.n===o.n);if(i>=0){S.scores.splice(i,1);this.scoresSoon()}return}
+      const r=p.new;if(!r||r.league_id!==S.lid||!S.scores)return;const x=scoreRow(r);const i=S.scores.findIndex(y=>y.mid===x.mid&&y.n===x.n);if(i>=0)S.scores[i]=x;else S.scores.push(x);this.scoresSoon()});
     on("fixtures",p=>{if(p.new&&p.new.id){this.putFx(p.new);this.calChanged()}});
     on("odds",p=>{if(p.eventType==="DELETE"){if(p.old?.fixture_id)this.od.delete(p.old.fixture_id)}else if(p.new?.fixture_id)this.putOd(p.new);this.calChanged()});
     on("calendar_rounds",async p=>{const r=p.new;if(!r?.n)return;if(r.published){S.calRounds[r.n]=true;await this.loadRoundOdds(r.n)}else delete S.calRounds[r.n];this.calChanged()});
@@ -229,6 +233,8 @@ const Online={
     ch.subscribe();this.chan=ch;
   },
   refreshSoon(){clearTimeout(this.t);this.t=setTimeout(()=>this.refresh(),250)},
+  scoresSoon(){clearTimeout(this.ts);this.ts=setTimeout(render,200)},
+  roundPicksSoon(n){clearTimeout(this.tr);this.tr=setTimeout(()=>{this.pkRounds.delete(n);this.needRound(n)},300)},
   leagueSoon(){clearTimeout(this.tl);this.tl=setTimeout(()=>{if(S.lid)this.loadLeague(S.lid).then(render)},300)},
   calChanged(){clearTimeout(this.tf);this.tf=setTimeout(()=>{this.calSave();this.calApply();render()},300)},
   async refresh(){await Promise.all([this.refreshLeagues(),this.loadFixtures()]);if(S.lid)await this.loadLeague(S.lid);render()},
@@ -286,6 +292,7 @@ const Online={
     }
     await this.refresh();
   },
+  async recomputeScores(){this.check(await this.sb.rpc("recompute_scores"))},
   async setOddsAuto(id){this.check(await this.sb.from("odds").update({manual:false}).eq("fixture_id",id));await this.refresh()},
   async acceptAlert(a){
     if(a.blocking&&a.c1)this.check(await this.sb.from("odds").upsert({fixture_id:a.fixture_id,o1:a.c1,ox:a.cx,o2:a.c2,manual:false,source:"api"},{onConflict:"fixture_id"}));
@@ -293,25 +300,49 @@ const Online={
   async syncOdds(){const {data,error}=await this.sb.functions.invoke("sync-quote",{body:{reason:"manuale"}});
     if(error){let msg=error.message;try{msg=(await error.context.json()).error||msg}catch{}throw new Error(msg)}await this.refresh();return data},
   async setPublished(n,v){const d=this.check(await this.sb.from("calendar_rounds").update({published:v}).eq("n",n).select("n"));if(!d.length)throw new Error("Non hai i permessi di amministratore");await this.refresh()},
+  /* lega: iscritti, bonus/penalità, punti salvati (round_scores) e i miei pronostici.
+     I pronostici degli altri si scaricano solo per la giornata mostrata (needRound): 10 partite × iscritti. */
+  pkRounds:new Set(),pkLoading:new Set(),
   async loadLeague(lid){
     const seq=++this.loadSeq;const sb=this.sb;
     const Lg=S.leagues.find(l=>l._id===lid);
-    const [mem,pk,adj,pw]=await Promise.all([
+    if(this.pkLid!==lid){this.pkLid=lid;this.pkRounds=new Set();this.pkLoading=new Set()}
+    const [mem,adj,pw,sc]=await Promise.all([
       sb.from("members").select("*").eq("league_id",lid),
-      sb.from("picks").select("member_id,fixture_id,pick").eq("league_id",lid),
       sb.from("league_adjustments").select("*").eq("league_id",lid).order("created_at"),
       Lg?.type==="private"?sb.rpc("league_password",{p_league:lid}):null,
+      sb.from("round_scores").select("member_id,n,pts,correct,best").eq("league_id",lid),
     ]);
+    if(seq!==this.loadSeq||S.lid!==lid)return;
+    const e=mem.error;if(e){console.warn(e);toast("Errore nel caricare la lega: "+itMsg(e));return}
+    const members=mem.data.map(m=>({_id:m.user_id||m.id,mid:m.id,nick:m.nickname,status:m.status,joinedAt:Date.parse(m.joined_at)}));
+    const me=members.find(m=>m._id===S.uid);const rounds=[...this.pkRounds];
+    const [mine,...others]=await Promise.all([
+      me?sb.from("picks").select("member_id,fixture_id,pick").eq("member_id",me.mid):{data:[]},
+      ...rounds.map(n=>sb.from("picks").select("member_id,fixture_id,pick").eq("league_id",lid).gte("fixture_id",n*100+1).lte("fixture_id",n*100+10)),
+    ]);
+    if(seq!==this.loadSeq||S.lid!==lid)return;
+    if(mine.error){console.warn(mine.error);toast("Errore nel caricare i pronostici: "+itMsg(mine.error));return}
     S.adjust=adj.error?[]:adj.data.map(a=>({id:a.id,mid:a.member_id,pts:Math.round(Number(a.points)*100),why:a.reason||"",at:a.created_at}));
     if(pw&&!pw.error)S.leaguePw[lid]=pw.data||"";
-    if(seq!==this.loadSeq||S.lid!==lid)return;
-    const e=mem.error||pk.error;if(e){console.warn(e);toast("Errore nel caricare la lega: "+itMsg(e));return}
-    S.members=mem.data.map(m=>({_id:m.user_id||m.id,mid:m.id,nick:m.nickname,status:m.status,joinedAt:Date.parse(m.joined_at)}));
-    const memberKey={};for(const m of S.members)memberKey[m.mid]=m._id;
-    const docs={};
-    for(const p of pk.data){const f=fixtureById(p.fixture_id);const k=memberKey[p.member_id];if(!f||!k)continue;const rId="g"+f.n;const id=`${rId}~${k}`;(docs[id]=docs[id]||{_id:id,uid:k,round:rId,picks:{}}).picks[String(p.fixture_id)]=p.pick}
-    S.picks=Object.values(docs);
+    S.scores=sc.error?(console.warn(sc.error),[]):sc.data.map(scoreRow);
+    S.members=members;
+    const rows=[...mine.data];others.forEach((o,i)=>{if(o.error)this.pkRounds.delete(rounds[i]);else rows.push(...o.data)});
+    S.picks=picksToDocs(rows);
     S.loaded={members:true,rounds:true,picks:true};
+  },
+  /* pronostici di tutti per una giornata già iniziata (prima del fischio il database non li mostra) */
+  async needRound(n){
+    const r=S.rounds.find(x=>x.n===n);const k=r&&firstKick(r);const lid=S.lid;
+    if(!lid||!k||Date.now()<k+5000||this.pkRounds.has(n)||this.pkLoading.has(n))return;
+    this.pkLoading.add(n);
+    const {data,error}=await this.sb.from("picks").select("member_id,fixture_id,pick").eq("league_id",lid).gte("fixture_id",n*100+1).lte("fixture_id",n*100+10);
+    this.pkLoading.delete(n);
+    if(S.lid!==lid)return;if(error){console.warn(error);return}
+    this.pkRounds.add(n);
+    const me=myMember();const keep=S.picks.filter(d=>d.round!=="g"+n||d.uid===S.uid);
+    const fresh=picksToDocs(data.filter(x=>!me||x.member_id!==me.mid));
+    S.picks=[...keep,...fresh];render();
   },
   check(res){if(res.error)throw new Error(itMsg(res.error));return res.data},
   async addAdjust(mid,pts,why){this.check(await this.sb.from("league_adjustments").insert({league_id:S.lid,member_id:mid,points:pts,reason:why||null}));await this.loadLeague(S.lid)},
@@ -388,7 +419,7 @@ function pickDefaultLeague(){
   if(lid!==S.lid)selectLeague(lid);
 }
 function selectLeague(lid){
-  S.lid=lid;S.roundSel=null;S.draft={};S.nickEdit=null;S.members=[];S.rounds=[];S.picks=[];S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
+  S.lid=lid;S.roundSel=null;S.draft={};S.nickEdit=null;S.members=[];S.rounds=[];S.picks=[];S.scores=ONLINE?[]:null;S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
   if(lid)lsSet("totofanta-last-lid:"+S.uid,lid);
   B.openLeague(lid);render();
 }
@@ -441,6 +472,15 @@ const myMember=()=>S.members.find(m=>m._id===S.uid);
 const isAdmin=()=>{const L=league();return !!L&&L.adminId===S.uid};
 const approved=()=>S.members.filter(m=>m.status==="approved");
 const pickDoc=(rId,uid)=>S.picks.find(p=>p._id===`${rId}~${uid}`);
+/* righe di picks del database → schedine per giornata e giocatore ({_id:"g11~<uid>",picks:{fixture_id:"1"}}) */
+function picksToDocs(rows){const key={};for(const m of S.members)key[m.mid]=m._id;const docs={};
+  for(const p of rows){const f=fixtureById(p.fixture_id);const k=key[p.member_id];if(!f||!k)continue;const rId="g"+f.n;const id=`${rId}~${k}`;(docs[id]=docs[id]||{_id:id,uid:k,round:rId,picks:{}}).picks[String(p.fixture_id)]=p.pick}
+  return Object.values(docs)}
+const scoreRow=r=>({mid:r.member_id,n:r.n,pts:r.pts,correct:r.correct,best:r.best});
+/* punti salvati di un iscritto in una giornata (solo online; in prova si calcolano dai pronostici) */
+function storedScore(n,uid){const m=S.members.find(x=>x._id===uid);const x=m&&S.scores.find(y=>y.mid===m.mid&&y.n===n);return x||{pts:0,correct:0,best:0}}
+/* chiede al backend i pronostici di tutti per la giornata (no-op in prova, dove ci sono già) */
+function needRound(n){if(ONLINE&&B.needRound)B.needRound(n)}
 function oddsComplete(r){return r.matches.length>0&&r.matches.every(m=>m.home&&m.away&&m.o1>1&&m.oX>1&&m.o2>1)}
 function firstKick(r){const ks=r.matches.map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x));return ks.length?Math.min(...ks):null}
 function roundVisible(r){return !!r.published&&oddsComplete(r)}
@@ -488,8 +528,10 @@ function computeStandings(L,members,rounds,picks){
   for(const r of rounds){
     const scored=r.matches.filter(m=>esito(m));if(!scored.length)continue;anyScored=true;
     for(const row of rows){
-      const pk=byId[`g${r.n}~${row.uid}`]?.picks||{};let pts=0,any=false;
-      for(const m of scored){const p=pk[m.id];if(p)any=true;if(p&&p===esito(m)){const c=cents(oddOf(m,p));pts+=c;row.correct++;if(c>row.mq)row.mq=c}}
+      let pts=0,any=false;
+      if(S.scores){const x=S.scores.find(y=>y.mid===row.mid&&y.n===r.n);if(x){any=true;pts=x.pts;row.correct+=x.correct;if(x.best>row.mq)row.mq=x.best}}
+      else{const pk=byId[`g${r.n}~${row.uid}`]?.picks||{};
+      for(const m of scored){const p=pk[m.id];if(p)any=true;if(p&&p===esito(m)){const c=cents(oddOf(m,p));pts+=c;row.correct++;if(c>row.mq)row.mq=c}}}
       row.perRound[r.n]=pts;row.total+=pts;if(pts>row.mp)row.mp=pts;if(any)row.played++;
     }
   }
@@ -499,7 +541,10 @@ function computeStandings(L,members,rounds,picks){
   rows.forEach((r,i)=>{const p=rows[i-1];r.pos=(p&&p.total===r.total&&p.mp===r.mp&&p.mq===r.mq)?p.pos:i+1});
   return rows;
 }
-function roundScore(r,uid){const pk=pickDoc(`g${r.n}`,uid)?.picks||{};let pts=0,ok=0,count=0,best=0;for(const m of r.matches){const p=pk[m.id];if(p)count++;const e=esito(m);if(e&&p===e){const c=cents(oddOf(m,p));pts+=c;ok++;if(c>best)best=c}}return{pts,ok,count,best}}
+function roundScore(r,uid){const pk=pickDoc(`g${r.n}`,uid)?.picks||{};let pts=0,ok=0,count=0,best=0;for(const m of r.matches){const p=pk[m.id];if(p)count++;const e=esito(m);if(e&&p===e){const c=cents(oddOf(m,p));pts+=c;ok++;if(c>best)best=c}}
+  /* online i punti sono quelli salvati dal database (stessa regola), anche se i pronostici altrui non sono scaricati */
+  if(S.scores){const x=storedScore(r.n,uid);return{pts:x.pts,ok:x.correct,count,best:x.best}}
+  return{pts,ok,count,best}}
 
 /* ===================== Generatori di esempio ===================== */
 function genOdds(h,a){const d=(RATING[h]??72)+4-(RATING[a]??72);let pH=1/(1+Math.exp(-d/7));const pD=0.28-Math.min(0.1,Math.abs(d)/120);pH*=1-pD;const pA=1-pD-pH;const m=1.06;const o=p=>Math.max(1.05,Math.round(100/(p*m))/100);return{o1:o(pH),oX:o(pD),o2:o(pA)}}
@@ -607,6 +652,7 @@ const ACT={
   admUndo:()=>{S.admEdit=null;S.formErr="";S.admWarnOk=false;render()},
   admAuto:d=>safe(async()=>{await B.setOddsAuto(+d.id);toast("Quota di nuovo automatica: si aggiorna al prossimo giro")}),
   admAlert:d=>{const a=S.oddsAlerts.find(x=>x.fixture_id===+d.id);if(!a)return;safe(async()=>{await B.acceptAlert(a);S.admEdit=null;toast(a.blocking?"Quota proposta applicata":"Avviso archiviato")})},
+  admScores:()=>safe(async()=>{await B.recomputeScores();toast("Punti ricalcolati")}),
   admSync:()=>safe(async()=>{const r=await B.syncOdds();S.admEdit=null;toast(`Quote aggiornate: ${r.updated} partite${r.alerts?.length?` · ${r.alerts.length} avvisi`:""}${r.remaining!=null?` · crediti rimasti ${r.remaining}`:""}`)}),
   admSim:()=>{const now=Date.now();let k=0;for(const f of fixturesOf(S.admN)){const e=S.admEdit?.e[f.id];if(!e)continue;const t=e.k?+new Date(e.k):NaN;
     if(!isNaN(t)&&t<=now&&e.hg===""&&e.ag===""){const x=Math.random();const[h,a]=sampleScore(x<.45?"1":x<.72?"X":"2");e.hg=String(h);e.ag=String(a);k++}}
@@ -932,6 +978,7 @@ function vPicks(L){
 function vOthers(r){
   if(!roundLocked(r))return "";
   if(!S.showOthers)return `<button class="btn wide sec" data-act="others">Vedi le schedine di tutti</button>`;
+  needRound(r.n);
   const head=r.matches.map(m=>`<th style="text-align:center" title="${esc(m.home)}–${esc(m.away)}">${abbr(m.home)}<br>${abbr(m.away)}</th>`).join("");
   const body=approved().map(pl=>{const pk=pickDoc(r._id,pl._id)?.picks||{};const s=roundScore(r,pl._id);
     return `<tr class="${pl._id===S.uid?"me":""}"><td>${esc(pl.nick)}</td>${r.matches.map(m=>{const p=pk[m.id];const e=esito(m);return `<td class="c ${e&&p?(p===e?"won":"lost"):""}">${p||"–"}</td>`}).join("")}<td class="n">${f2(s.pts)}</td></tr>`}).join("");
@@ -946,7 +993,7 @@ function vResults(L){
   let html=`<div class="phdr"><h2 class="pagetitle">Risultati</h2></div>`;
   if(!list.length){const nx=S.rounds.find(r=>roundVisible(r)&&!roundLocked(r));const fk=nx&&firstKick(nx);
     return html+`<section class="card"><p class="cta-title">Ancora nessuna giornata giocata</p><p class="center small muted" style="font-family:var(--f-ui)">${fk?`I pronostici di tutti saranno visibili dal fischio d'inizio della ${nx.n}ª giornata, ${fmtDow(fk)} alle ${fmtTime(fk)}.`:"I pronostici di tutti si vedono dal fischio d'inizio della prima partita di ogni giornata."}</p></section>`}
-  const r=list.find(x=>x.n===S.resN)||list[0];
+  const r=list.find(x=>x.n===S.resN)||list[0];needRound(r.n);
   const st=r2=>roundDone(r2)?"Conclusa":"In corso";
   html+=`<div class="ressel"><label for="res-n">Giornata</label><div class="selwrap"><select id="res-n">${list.map(x=>`<option value="${x.n}"${x.n===r.n?" selected":""}>${x.n}ª giornata · ${st(x)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div>`;
   /* giocatori in ordine di punti della giornata (pari punti: miglior quota, poi nome) */
@@ -966,7 +1013,7 @@ function vResults(L){
       return `<td class="rc ${cls}${d.m._id===S.uid?" me":""}">${inner}</td>`}).join("")}</tr>`}).join("");
   const foot=`<tr class="tot"><th class="mt" scope="row">Totale</th>${cols.map(d=>`<td class="rc${d.m._id===S.uid?" me":""}"><b>${f2(d.pts)}</b><i>${d.pos}°</i></td>`).join("")}</tr>`;
   html+=`<section class="card"><div class="tbl rmx"><table><thead><tr><th class="mt">Partita</th>${head}</tr></thead><tbody>${rows}</tbody><tfoot>${foot}</tfoot></table></div>
-   <p class="small muted rlegend"><span class="lg won">Indovinato</span><span class="lg lost">Sbagliato</span><span class="lg wait">In attesa</span>Dopo la tua colonna, gli altri in ordine di punti della giornata.</p></section>`;
+   ${ONLINE&&B.pkRounds&&!B.pkRounds.has(r.n)?`<p class="small muted" style="font-family:var(--f-ui)">Carico le schedine della giornata…</p>`:""}<p class="small muted rlegend"><span class="lg won">Indovinato</span><span class="lg lost">Sbagliato</span><span class="lg wait">In attesa</span>Dopo la tua colonna, gli altri in ordine di punti della giornata.</p></section>`;
   return html;
 }
 
@@ -1085,9 +1132,12 @@ function oddsCard(){
    ${al.length?`<div class="list">${al.map(a=>`<div class="alertrow ${a.blocking?"blk":""}"><div class="grow"><b>${name(a.fixture_id)}</b><br><span class="small">${a.blocking?"Quota <b>non applicata</b>":"Quota applicata, da controllare"}: ${esc(a.reason)} · proposta ${q(a)}</span></div><button class="btn sm ${a.blocking?"":"ghost"}" data-act="admAlert" data-id="${a.fixture_id}" ${a.blocking&&!a.c1?"disabled":""}>${a.blocking?"Applica":"Ok"}</button></div>`).join("")}</div>`:`<p class="small" style="font-family:var(--f-ui)"><span class="chip ok">Nessun avviso</span></p>`}
   </section>`;
 }
+/* punti salvati: il database li ricalcola da solo; il pulsante serve solo come verifica manuale */
+function scoresCard(){return `<section class="card"><div class="row"><h3 class="grow">Punti delle leghe</h3><button class="btn sm sec" data-act="admScores" ${S.busy?"disabled":""}>Ricalcola</button></div>
+  <p class="small muted" style="font-family:var(--f-ui)">I punti si ricalcolano da soli a ogni risultato, quota o pubblicazione modificati, e di nuovo ogni notte. "Ricalcola" rifà il conto di tutte le giornate di tutte le leghe.</p></section>`}
 function vPanel(){
   let html=`<h2 class="pagetitle">Pannello amministratore</h2>
-  <p class="tip">${ONLINE?"Quello che salvi qui vale subito per tutte le leghe.":"Modalità prova: le modifiche restano in questo browser."} Poteri attivi: <b>orari</b>, <b>quote</b> e <b>risultati</b> delle partite, <b>pubblicazione</b> delle giornate.</p>`+(ONLINE?oddsCard():"");
+  <p class="tip">${ONLINE?"Quello che salvi qui vale subito per tutte le leghe.":"Modalità prova: le modifiche restano in questo browser."} Poteri attivi: <b>orari</b>, <b>quote</b> e <b>risultati</b> delle partite, <b>pubblicazione</b> delle giornate.</p>`+(ONLINE?oddsCard()+scoresCard():"");
   if(!S.fixtures.length)return html+noCalendar();
   const n=S.admN||(S.admN=adminDefaultRound());const fs=fixturesOf(n);
   if(!S.admEdit||S.admEdit.n!==n){S.admEdit={n,e:{}};for(const f of fs)S.admEdit.e[f.id]=admBase(f)}
