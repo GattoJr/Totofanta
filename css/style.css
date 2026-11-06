@@ -598,3 +598,6 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .rlegend .lg.won::before{background:var(--win-soft);border-color:var(--win)}
 .rlegend .lg.lost::before{background:var(--card);border-color:var(--lose)}
 .rlegend .lg.wait::before{background:var(--card)}
+/* fonte dei dati in fondo al menu (richiesta dalle condizioni di football-data.org) */
+.drawer .dsrc{margin:auto 18px 18px;padding-top:12px;font-family:var(--f-ui);font-size:11.5px;color:var(--muted);line-height:1.4}
+.drawer .dsrc a{color:inherit}

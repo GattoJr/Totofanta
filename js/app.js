@@ -221,8 +221,7 @@ const Online={
     on("members",()=>this.refreshSoon());
     on("league_adjustments",()=>this.leagueSoon());
     /* i propri pronostici sono già aggiornati in pagina dopo il salvataggio: si ricarica la lega solo per quelli degli altri */
-    on("picks",p=>{const row=p.new&&p.new.member_id?p.new:p.old;const me=myMember();if(me&&row&&row.member_id===me.mid)return;
-      const n=row&&row.fixture_id?Math.floor(row.fixture_id/100):null;if(n&&this.pkRounds.has(n))this.roundPicksSoon(n)});
+    /* i pronostici non sono nel tempo reale (v19): prima del fischio quelli altrui non sono leggibili, dopo non cambiano */
     /* punti salvati dal database: la riga ricevuta si applica direttamente, senza scaricare nulla */
     on("round_scores",p=>{if(p.eventType==="DELETE"){const o=p.old||{};const i=(S.scores||[]).findIndex(x=>x.mid===o.member_id&&x.n===o.n);if(i>=0){S.scores.splice(i,1);this.scoresSoon()}return}
       const r=p.new;if(!r||r.league_id!==S.lid||!S.scores)return;const x=scoreRow(r);const i=S.scores.findIndex(y=>y.mid===x.mid&&y.n===x.n);if(i>=0)S.scores[i]=x;else S.scores.push(x);this.scoresSoon()});
@@ -832,7 +831,7 @@ function vDrawer(){
   <nav>
    <div class="grp">Leghe</div>
    <button class="dl" data-act="newLeague">${I.plus}Crea una lega</button><button class="dl" data-act="joinModal">${I.enter}Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">${I.league}Le mie leghe</button>
-  </nav></aside>`;
+  </nav><p class="dsrc">Football data provided by the Football-Data.org API · <a href="termini.html">Termini</a> · <a href="privacy.html">Privacy</a></p></aside>`;
 }
 function vLeave(){return `<div class="scrim" data-act="leaveStay"></div><div class="card modal" role="alertdialog" aria-modal="true" aria-labelledby="lvt"><h2 id="lvt">Pronostici non salvati</h2><p class="small" style="font-family:var(--f-ui)">Hai modificato dei pronostici senza salvarli. Se esci ora le modifiche vanno perse.</p>
   <button class="btn block" data-act="leaveSave" ${S.busy?"disabled":""}>Salva ed esci</button><button class="btn block sec" data-act="leaveDiscard">Esci senza salvare</button><button class="btn ghost" data-act="leaveStay">Resta qui</button></div>`}
