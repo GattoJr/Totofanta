@@ -221,23 +221,32 @@ const Online={
     fetchJoinKind();
     render();
   },
+  /* tempo reale (v20): iscritti e bonus solo della lega aperta (filtro per lega), le proprie iscrizioni,
+     un solo avviso per giornata quando cambiano i punti (score_ticks), calendario e quote per tutti;
+     avvisi sulle quote solo per l'amministratore del sito. Cambiando lega il canale si ricrea. */
   subscribe(){
-    const ch=this.sb.channel("tf-"+S.uid);
-    const on=(t,fn)=>ch.on("postgres_changes",{event:"*",schema:"public",table:t},fn);
+    const lid=S.lid;const ch=this.sb.channel("tf-"+S.uid+"-"+(lid||"x"));
+    const on=(t,fn,filter)=>ch.on("postgres_changes",{event:"*",schema:"public",table:t,...(filter?{filter}:{})},fn);
     on("leagues",()=>this.refreshSoon());
-    on("members",()=>this.refreshSoon());
-    on("league_adjustments",()=>this.leagueSoon());
-    /* i propri pronostici sono già aggiornati in pagina dopo il salvataggio: si ricarica la lega solo per quelli degli altri */
+    on("members",p=>{if(p.eventType!=="DELETE")this.refreshSoon()},"user_id=eq."+S.uid);
+    if(lid){
+      /* le cancellazioni arrivano senza filtro e con il solo id: si ricarica solo se è un iscritto della lega aperta */
+      on("members",p=>{if(p.eventType==="DELETE"&&!S.members.some(m=>m.mid===p.old?.id))return;this.refreshSoon()},"league_id=eq."+lid);
+      on("league_adjustments",p=>{if(p.eventType==="DELETE"&&!(S.adjust||[]).some(a=>a.id===p.old?.id))return;this.leagueSoon()},"league_id=eq."+lid);
+    }
     /* i pronostici non sono nel tempo reale (v19): prima del fischio quelli altrui non sono leggibili, dopo non cambiano */
-    /* punti salvati dal database: la riga ricevuta si applica direttamente, senza scaricare nulla */
-    on("round_scores",p=>{if(p.eventType==="DELETE"){const o=p.old||{};const i=(S.scores||[]).findIndex(x=>x.mid===o.member_id&&x.n===o.n);if(i>=0){S.scores.splice(i,1);this.scoresSoon()}return}
-      const r=p.new;if(!r||r.league_id!==S.lid||!S.scores)return;const x=scoreRow(r);const i=S.scores.findIndex(y=>y.mid===x.mid&&y.n===x.n);if(i>=0)S.scores[i]=x;else S.scores.push(x);this.scoresSoon()});
+    on("score_ticks",p=>{const n=p.new?.n;if(n)this.scoresRoundSoon(n)});
     on("fixtures",p=>{if(p.new&&p.new.id){this.putFx(p.new);this.calChanged()}});
     on("odds",p=>{if(p.eventType==="DELETE"){if(p.old?.fixture_id)this.od.delete(p.old.fixture_id)}else if(p.new?.fixture_id)this.putOd(p.new);this.calChanged()});
     on("calendar_rounds",async p=>{const r=p.new;if(!r?.n)return;if(r.published){S.calRounds[r.n]=true;await this.loadRoundOdds(r.n)}else delete S.calRounds[r.n];this.calChanged()});
-    on("odds_alerts",()=>{if(S.siteAdmin){clearTimeout(this.ta);this.ta=setTimeout(()=>this.loadAdminExtras().then(render),400)}});
-    ch.subscribe();this.chan=ch;
+    if(S.siteAdmin)on("odds_alerts",()=>{clearTimeout(this.ta);this.ta=setTimeout(()=>this.loadAdminExtras().then(render),400)});
+    ch.subscribe();this.chan=ch;this.chanLid=lid;
   },
+  resubscribe(){if(this.chan){this.sb.removeChannel(this.chan);this.chan=null}if(S.uid&&!this.paused)this.subscribe()},
+  /* punti di una giornata per la lega aperta: circa una riga per iscritto */
+  scoresRoundSoon(n){(this.tsr=this.tsr||{});clearTimeout(this.tsr[n]);this.tsr[n]=setTimeout(async()=>{const lid=S.lid;if(!lid||!S.scores)return;
+    const {data,error}=await this.sb.from("round_scores").select("member_id,n,pts,correct,best").eq("league_id",lid).eq("n",n);
+    if(error||S.lid!==lid)return;S.scores=S.scores.filter(x=>x.n!==n).concat(data.map(scoreRow));render()},400)},
   refreshSoon(){clearTimeout(this.t);this.t=setTimeout(()=>this.refresh(),250)},
   scoresSoon(){clearTimeout(this.ts);this.ts=setTimeout(render,200)},
   roundPicksSoon(n){clearTimeout(this.tr);this.tr=setTimeout(()=>{this.pkRounds.delete(n);this.needRound(n)},300)},
@@ -251,7 +260,7 @@ const Online={
     S.me={leagues:S.leagues.map(l=>l._id)};S.meLoaded=true;
     if(S.lid&&!S.me.leagues.includes(S.lid))pickDefaultLeague();
   },
-  openLeague(lid){if(lid)this.loadLeague(lid).then(render)},
+  openLeague(lid){if(this.chan&&this.chanLid!==lid)this.resubscribe();if(lid)this.loadLeague(lid).then(render)},
   /* ---- calendario e quote: copia salvata nel browser, si scarica solo ciò che è cambiato (updated_at) ---- */
   calKey(){return "totofanta-cal-v1:"+S.uid},
   calLoad(){this.fx=new Map();this.od=new Map();this.fxMax=null;this.odMax=null;

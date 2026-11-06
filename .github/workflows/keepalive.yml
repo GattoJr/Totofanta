@@ -1,0 +1,38 @@
+# Totofanta · accesso automatico settimanale
+# Il progetto Supabase gratuito si mette in pausa dopo 7 giorni senza richieste (per esempio d'estate).
+# Ogni lunedì questa attività chiama la funzione keepalive dall'esterno. Lo stesso fa pg_cron dall'interno
+# ("accesso-settimanale"): questa copia serve se il database fosse già fermo.
+# GitHub sospende le attività programmate dopo 60 giorni senza modifiche al repository: se l'ultima
+# modifica ha più di 50 giorni, l'attività registra una modifica vuota per restare attiva.
+name: Accesso settimanale Supabase
+on:
+  schedule:
+    - cron: "17 7 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chiama la funzione keepalive
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://cmjdfhkmzrfuukgeudet.supabase.co/functions/v1/keepalive) && [ "$code" = "200" ] && echo "ok ($code)" && exit 0
+            echo "tentativo $i: $code"; sleep 60
+          done
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Tiene attiva l'attività programmata
+        run: |
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt $(( 50 * 86400 )) ]; then
+            git config user.name "totofanta-keepalive"
+            git config user.email "totofanta.admin@gmail.com"
+            git commit --allow-empty -m "Accesso settimanale: modifica vuota per tenere attiva l'attività programmata"
+            git push
+          else
+            echo "ultima modifica recente, niente da fare"
+          fi
