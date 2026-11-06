@@ -211,7 +211,7 @@ const Online={
     /* invito aperto prima dell'accesso: se sono già iscritto a quella lega non chiedo di nuovo i dati */
     if(S.modal==="join"&&S.form?.name){const mine=myLeagueByName(S.form.name);if(mine)alreadyIn(mine)}
     this.subscribe();
-    fetchJoinKind();resolveLegacyCode();
+    fetchJoinKind();
     render();
   },
   subscribe(){
@@ -355,6 +355,7 @@ const Online={
   },
   async joinLeague(f){
     const r=this.check(await this.sb.rpc("join_league",{p_name:(f.name||"").trim(),p_password:f.pw||"",p_code:null,p_nickname:(f.nick||"").trim()}));
+    if(r&&r.error)throw new Error(r.error);
     await this.refreshLeagues();return{lid:r.league_id,status:r.status};
   },
   async setPick(r,m,p){
@@ -370,9 +371,16 @@ const Online={
   async setNickname(nick){return this.setNicknameIn(S.lid,nick)},
   async setNicknameIn(lid,nick){this.check(await this.sb.rpc("set_nickname",{p_league:lid,p_nickname:nick}));await this.refresh()},
   async myNicknames(){const d=this.check(await this.sb.from("members").select("league_id,nickname").eq("user_id",S.uid));const out={};for(const m of d)out[m.league_id]=m.nickname;return out},
+  /* leghe di cui sono admin con altri iscritti: prima di eliminare l'account va nominato un nuovo admin */
+  async adminHandover(){
+    const mine=S.leagues.filter(L=>L.adminId===S.uid);if(!mine.length)return[];
+    const {data,error}=await this.sb.from("members").select("id,league_id,user_id,nickname,status").in("league_id",mine.map(L=>L._id));
+    if(error)throw new Error(itMsg(error));
+    return mine.map(L=>({lid:L._id,name:L.name,members:data.filter(m=>m.league_id===L._id&&m.user_id!==S.uid&&m.status==="approved").map(m=>({mid:m.id,nick:m.nickname})).sort((a,b)=>a.nick.localeCompare(b.nick,"it",{sensitivity:"base"}))})).filter(x=>x.members.length);
+  },
+  async transferAdmin(lid,mid){this.check(await this.sb.rpc("transfer_admin",{p_league:lid,p_member:mid}))},
   async deleteAccount(){const {data,error}=await this.sb.functions.invoke("delete-account",{body:{confirm:"ELIMINA"}});if(error){let msg=error.message;try{msg=(await error.context.json()).error||msg}catch{}throw new Error(msg)}if(!data?.ok)throw new Error("Eliminazione non riuscita");await this.sb.auth.signOut()},
   async deleteLeague(){this.check(await this.sb.from("leagues").delete().eq("id",S.lid));await this.refreshLeagues()},
-  async nameByCode(code){const r=await this.sb.rpc("league_name_by_code",{p_code:(code||"").trim()});return r.error?null:r.data||null},
   async leagueType(name){const r=await this.sb.rpc("league_join_info",{p_name:(name||"").trim()});return r.error?null:r.data||null},
   // ---- account
   async signIn(email,pw){this.check(await this.sb.auth.signInWithPassword({email,password:pw}))},
@@ -409,7 +417,7 @@ async function boot(){
   render();
   handleHash();
   try{await B.init()}catch(e){console.error(e);toast("Avvio non riuscito: "+itMsg(e))}
-  S.boot=false;fetchJoinKind();resolveLegacyCode();render();
+  S.boot=false;fetchJoinKind();render();
 }
 function myLeagues(){return (S.me.leagues||[]).map(id=>S.leagues.find(l=>l._id===id)).filter(Boolean)}
 function pickDefaultLeague(){
@@ -439,13 +447,8 @@ function handleHash(){
   if(ADMIN_PAGE)return;
   const m=(location.hash||"").match(/^#lega=(.+)$/);
   if(m){let name="";try{name=decodeURIComponent(m[1])}catch{name=m[1]}if(name.trim())openJoin(name.trim());return}
-  /* vecchi link #invito-CODICE: si ricava il nome della lega, la password serve comunque */
-  const c=(location.hash||"").match(/^#invito-([A-Za-z0-9]+)$/);
-  if(c){S.legacyCode=c[1].toUpperCase();S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="";S.modal="join";resolveLegacyCode()}
-}
-function resolveLegacyCode(){
-  const code=S.legacyCode;if(!code||!S.uid)return;S.legacyCode=null;
-  B.nameByCode(code).then(n=>{if(n&&S.modal==="join"&&!S.form.name){openJoin(n);render()}}).catch(()=>{});
+  /* vecchi link #invito-CODICE: disattivati il 6/11 (si potevano usare per scoprire i nomi delle leghe) */
+  if(/^#invito-/.test(location.hash||"")){S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="Questo link d'invito non è più valido: chiedi all'admin il nuovo link della lega oppure inserisci nome e password.";S.modal="join";try{history.replaceState(null,"",location.pathname)}catch{}}
 }
 /* lega dell'invito a cui sono già iscritto (stesso nome, maiuscole e spazi ignorati) */
 function myLeagueByName(name){const k=(name||"").trim().toLowerCase();return k?myLeagues().find(l=>(l.nameKey||l.name.trim().toLowerCase())===k):null}
@@ -558,7 +561,7 @@ const ACT={
   drawer:()=>{S.drawer=!S.drawer;S.lsOpen=false;render()},
   lsToggle:()=>{S.lsOpen=!S.lsOpen;render()},
   lsPick:d=>{S.lsOpen=false;if(d.lid===S.lid){render();return}if(guard(()=>ACT.lsPick(d)))return;selectLeague(d.lid);go("home");toast(`Lega: ${league()?.name||""}`)},
-  closeAll:()=>{S.drawer=false;S.modal=null;S.help=null;render()},
+  closeAll:()=>{S.drawer=false;S.modal=null;S.xfer=null;S.help=null;S.formErr="";render()},
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
   newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?(firstOpenRound()||38):1),nick:"",logo:null};go("create")},
   joinModal:()=>{S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="";S.modal="join";S.drawer=false;render()},
@@ -567,7 +570,8 @@ const ACT={
     const f=S.form;const name=(f.name||"").trim();const nick=(f.nick||"").trim();
     if(name.length<3)return err("Inserisci un nome di almeno 3 caratteri per la lega");
     if(name.length>24)return err("Il nome della lega può avere al massimo 24 caratteri");
-    if(f.type==="private"&&(f.pw||"").length<4)return err("Scegli una password di almeno 4 caratteri");
+    if(f.type==="private"&&(f.pw||"").length<6)return err("Scegli una password di almeno 6 caratteri");
+    if(myLeagues().filter(L=>L.adminId===S.uid).length>=6)return err("Puoi essere admin di al massimo 6 leghe");
     if(nick.length<2)return err("Scegli il tuo nickname");
     if(calRoundStarted(+f.start))return err(`La ${f.start}ª giornata è già iniziata: scegli una giornata successiva`);
     S.formErr="";
@@ -617,7 +621,14 @@ const ACT={
   profPw:()=>{const f=S.prof;if((f.pw||"").length<6)return toast("La password deve avere almeno 6 caratteri");if(f.pw!==f.pw2)return toast("Le due password non coincidono");
     safe(async()=>{await Online.updatePw(f.pw);f.pw=f.pw2="";toast("Password aggiornata")})},
   profDel:()=>{if((S.prof.del||"").trim().toUpperCase()!=="ELIMINA")return toast("Scrivi ELIMINA per confermare");
-    safe(async()=>{await B.deleteAccount();S.prof=null;S.screen="home";toast("Account eliminato")})},
+    safe(async()=>{
+      /* admin di leghe con altri iscritti: prima il nuovo admin (finestra), poi l'eliminazione */
+      const ho=B.adminHandover?await B.adminHandover():[];
+      if(ho.length){S.xfer={leagues:ho,pick:{}};S.formErr="";S.modal="xfer";return}
+      await B.deleteAccount();S.prof=null;S.screen="home";toast("Account eliminato")})},
+  xferOk:()=>{const X=S.xfer;if(!X)return;const miss=X.leagues.find(x=>!X.pick[x.lid]);if(miss){S.formErr=`Scegli il nuovo admin di “${miss.name}”`;return render()}
+    safe(async()=>{for(const x of X.leagues)await B.transferAdmin(x.lid,X.pick[x.lid]);S.modal=null;S.xfer=null;S.formErr="";
+      await B.deleteAccount();S.prof=null;S.screen="home";toast("Nuovo admin nominato e account eliminato")})},
   saveNick:()=>{const me=myMember();const nick=(S.nickEdit??me?.nick??"").trim();
     if(nick.length<2||nick.length>20)return toast("Il nickname deve avere da 2 a 20 caratteri");
     if(me&&nick===me.nick)return toast("Il nickname è già questo");
@@ -641,7 +652,7 @@ const ACT={
     S.formErr="";S.formErrAt=null;const pts=Math.round(v*100)/100;
     await safe(async()=>{await B.addAdjust(F.mid,pts,(F.why||"").trim());const nick=S.members.find(m=>m.mid===F.mid)?.nick||"";S.adjForm={mid:"",pts:"",why:""};toast(`${pts>0?"Bonus":"Penalità"} di ${f2(Math.round(Math.abs(pts)*100))} punti a ${nick}`)})},
   delAdjust:d=>safe(async()=>{await B.delAdjust(d.id);toast("Rettifica annullata")}),
-  async setLeaguePw(){if(!isAdmin())return;const pw=(S.pwForm||"").trim();if(pw.length<4)return toast("La password deve avere almeno 4 caratteri");
+  async setLeaguePw(){if(!isAdmin())return;const pw=(S.pwForm||"").trim();if(pw.length<6)return toast("La password deve avere almeno 6 caratteri");
     await safe(async()=>{await B.setLeaguePw(pw);S.pwForm="";toast("Password della lega aggiornata")})},
   delLeague:()=>{if(!isAdmin())return;if(S.confirm!=="delLeague"){S.confirm="delLeague";S.drawer=false;S.screen="admin";return render()}
     safe(async()=>{await B.deleteLeague();S.confirm=null;selectLeague(null);pickDefaultLeague();toast("Lega eliminata");go("home")})},
@@ -720,6 +731,7 @@ app.addEventListener("change",e=>{const t=e.target;
   if(t.id==="who-sel")return switchLocal(t.value);
   if(t.id==="league-sel"){selectLeague(t.value);return}
   if(t.id==="cal-n"){S.calN=+t.value;render();return}
+  if(t.dataset&&t.dataset.xfer&&S.xfer){S.xfer.pick[t.dataset.xfer]=t.value;S.formErr="";render();return}
   if(t.id==="res-n"){S.resN=+t.value;render();return}
   if(t.id==="adm-n"){S.admN=+t.value;S.admEdit=null;S.formErr="";render();return}
   if(t.id==="cf-logo"&&t.files[0]){const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement("canvas");c.width=c.height=128;const x=c.getContext("2d");const s=Math.min(img.width,img.height);x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,128,128);S.form.logo=c.toDataURL("image/jpeg",.85);render()};img.src=fr.result};fr.readAsDataURL(t.files[0])}
@@ -770,7 +782,7 @@ function render(){
   const meNick=myMember()?.nick||S.localUsers.find(u=>u.id===S.uid)?.name||S.email||"?";
   const rightBtn=bare||S.screen==="profilo"?"<span></span>":`<button class="avatar" data-act="openProfile" aria-label="Profilo">${esc((meNick.trim()[0]||"?").toUpperCase())}</button>`;
   app.innerHTML=`<header class="top"><div class="col">${leftBtn}${brand}${rightBtn}</div></header>
-  <main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
+  <main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${!bare&&S.modal==="xfer"&&S.xfer?vXfer():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
   if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
   placeNextBar();
@@ -873,6 +885,13 @@ function vJoin(){
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
   <button class="btn block" type="submit" ${S.busy||(sameName&&f.closed)?"disabled":""}>${S.busy?"Attendi…":"Unisciti"}</button></form>`;
 }
+/* finestra: nuovo admin per ogni lega che si lascerebbe senza admin */
+function vXfer(){const X=S.xfer;
+  return `<div class="scrim" data-act="closeAll"></div><div class="card modal" role="dialog" aria-modal="true" aria-labelledby="xft"><h2 id="xft">Nomina un nuovo admin</h2>
+  <p class="small" style="font-family:var(--f-ui)">Sei admin di ${X.leagues.length===1?"una lega":"alcune leghe"} con altri iscritti. Prima di eliminare l'account scegli chi prende il tuo posto: diventerà admin e tu non lo sarai più.</p>
+  ${X.leagues.map(x=>`<label class="small" for="xf-${x.lid}" style="font-family:var(--f-ui)"><b>${esc(x.name)}</b></label><select id="xf-${x.lid}" data-xfer="${x.lid}"><option value="">Scegli il nuovo admin</option>${x.members.map(m=>`<option value="${m.mid}"${X.pick[x.lid]===m.mid?" selected":""}>${esc(m.nick)}</option>`).join("")}</select>`).join("")}
+  ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
+  <button class="btn block danger" data-act="xferOk" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Nomina ed elimina l'account"}</button><button class="btn ghost" data-act="closeAll">Annulla</button></div>`}
 function logoHtml(L){return `<div class="logo">${L.logo?`<img src="${esc(L.logo)}" alt="">`:esc((L.name||"?").trim()[0]?.toUpperCase())}</div>`}
 
 function vNoLeague(){
@@ -1089,7 +1108,7 @@ function vProfile(){
    <input type="password" id="pp-2" data-bind="prof.pw2" value="${esc(P.pw2)}" placeholder="Ripeti la password" autocomplete="new-password">
    <button class="btn sm" data-act="profPw" style="align-self:flex-start" ${S.busy?"disabled":""}>Salva password</button></section>`;
   const adm=mine.filter(L=>L.adminId===S.uid);
-  html+=`<section class="card danger-zone"><h3>Elimina account</h3><p class="small" style="font-family:var(--f-ui)">Cancella per sempre il tuo account, le tue iscrizioni e i tuoi pronostici.${adm.length?` Verranno eliminate anche le leghe di cui sei admin, per tutti i partecipanti: <b>${adm.map(L=>esc(L.name)).join(", ")}</b>.`:""} Non si può annullare.</p>
+  html+=`<section class="card danger-zone"><h3>Elimina account</h3><p class="small" style="font-family:var(--f-ui)">Cancella per sempre il tuo account, le tue iscrizioni e i tuoi pronostici.${adm.length?` Per le leghe di cui sei admin (<b>${adm.map(L=>esc(L.name)).join(", ")}</b>) ti chiederemo di nominare un nuovo admin; quelle in cui sei l'unico iscritto verranno eliminate.`:""} Non si può annullare.</p>
    <input type="text" id="pd-1" data-bind="prof.del" value="${esc(P.del)}" placeholder="Scrivi ELIMINA per confermare" autocomplete="off" autocapitalize="characters">
    <button class="btn sm danger" data-act="profDel" style="align-self:flex-start" ${S.busy?"disabled":""}>Elimina il mio account</button></section>`;
   return html;
@@ -1170,7 +1189,7 @@ function vCreate(){
    ${SHOW_LOGO?`<div class="row">${f.logo?`<div class="logo"><img src="${f.logo}" alt=""></div>`:""}<label class="small grow" style="font-family:var(--f-ui)">Logo (facoltativo) <input type="file" id="cf-logo" accept="image/*"></label></div>`:""}</section>
   <section class="card"><div class="q">Accessibilità lega:<button class="help" data-act="help" data-k="access" aria-label="Spiegazione">?</button></div><div class="opts">
    ${opt("cf-type","cf-type-pr","private","form.type","Privata",f.type==="private",1)}${opt("cf-type","cf-type-pu","public","form.type","Pubblica",f.type==="public",1)}</div></section>
-  ${f.type==="private"?`<section class="card"><div class="q">Scegli una password per la tua lega:</div><input type="text" id="cf-pw" data-bind="form.pw" value="${esc(f.pw)}" maxlength="30" autocomplete="off" placeholder="Almeno 4 caratteri"></section>`:""}
+  ${f.type==="private"?`<section class="card"><div class="q">Scegli una password per la tua lega:</div><input type="text" id="cf-pw" data-bind="form.pw" value="${esc(f.pw)}" maxlength="30" autocomplete="off" placeholder="Almeno 6 caratteri"></section>`:""}
   <section class="card"><div class="q">Criterio di spareggio</div><div class="tiebox"><p><b>1.</b> A pari punti è più in alto chi ha il <b>Miglior punteggio di giornata (MP)</b>: i punti più alti fatti in una singola giornata.</p><p><b>2.</b> Se anche l'MP è uguale, conta la <b>Miglior quota (MQ)</b>: la quota più alta indovinata con un singolo pronostico.</p><p><b>3.</b> Se MP e MQ sono uguali, i giocatori condividono la posizione (es. due secondi posti) e chi segue scala di conseguenza.</p></div></section>
   <section class="card"><div class="q">Giornata di inizio della lega:</div>${firstOpenRound()?`<select id="cf-start" data-bind="form.start">${Array.from({length:38},(_,i)=>i+1).filter(n=>!calRoundStarted(n)).map(n=>`<option value="${n}"${+f.start===n?" selected":""}>${n}° Giornata</option>`).join("")}</select><p class="small muted" style="font-family:var(--f-ui)">Si può partire solo da una giornata non ancora iniziata.</p>`:`<p class="small" style="font-family:var(--f-ui)">Il campionato è finito: non ci sono giornate da cui partire.</p>`}</section>
   <section class="card"><div class="q">Il tuo nickname:</div><input type="text" id="cf-nick" data-bind="form.nick" value="${esc(f.nick)}" maxlength="20" placeholder="Come ti vedranno gli altri"></section>
