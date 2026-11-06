@@ -191,10 +191,17 @@ const Online={
     setInterval(()=>{if(!S.uid||document.visibilityState==="hidden")return;
       const locked=S.rounds.filter(r=>roundLocked(r)).length;if(this.lockedCount!=null&&locked!==this.lockedCount&&S.lid)render();this.lockedCount=locked;
       if(Date.now()-this.lastSync>=5*60e3){this.lastSync=Date.now();this.loadFixtures({light:true}).then(render)}},60000);
-    /* tornando sul sito dopo almeno un minuto: aggiornamento (calendario sempre incrementale) */
-    document.addEventListener("visibilitychange",()=>{if(!S.uid)return;if(document.visibilityState==="hidden"){this.hiddenAt=Date.now();return}
+    /* scheda nascosta da più di 20 secondi (altra app, altra scheda, schermo bloccato): si chiude il collegamento
+       in tempo reale, così non occupa uno dei posti disponibili (circa 200 nel piano gratuito di Supabase).
+       Al ritorno si riapre e si scarica subito ciò che è cambiato (calendario incrementale, punti, pronostici).
+       Senza chiusura: aggiornamento al ritorno dopo almeno un minuto, come prima. */
+    document.addEventListener("visibilitychange",()=>{if(!S.uid)return;clearTimeout(this.pauseT);
+      if(document.visibilityState==="hidden"){this.hiddenAt=Date.now();
+        this.pauseT=setTimeout(()=>{if(document.visibilityState==="hidden"&&this.chan){this.sb.removeChannel(this.chan);this.chan=null;this.paused=true}},this.PAUSE_MS);return}
+      if(this.paused){this.paused=false;if(!this.chan)this.subscribe();this.lastSync=Date.now();this.refresh();return}
       if(Date.now()-(this.hiddenAt||0)>60e3){this.lastSync=Date.now();this.refresh()}});
   },
+  PAUSE_MS:20000,
   async onSession(session){
     const uid=session?.user?.id||null;
     S.email=session?.user?.email||"";S.providers=session?.user?.app_metadata?.providers||(session?.user?.app_metadata?.provider?[session.user.app_metadata.provider]:[]);
