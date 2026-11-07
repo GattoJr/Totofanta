@@ -337,8 +337,8 @@ input[type=text],input[type=email],input[type=password],input[type=number],input
 .stathead{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .statcard .statnick{align-self:auto;font-family:var(--f-ui);font-weight:700;font-size:16px;margin:0}
 .statcard .golink{align-self:auto;font-size:13px;font-weight:600;color:var(--blue-text)}
-.statcard .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;text-align:left}
-.statcard .stats>span{background:var(--field);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:2px;border:0}
+.statcard .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;text-align:center}
+.statcard .stats>span{background:var(--field);border-radius:12px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0}
 .statcard .stats b{font-family:var(--f-disp);font-weight:800;font-size:30px;line-height:1}
 .statcard .stats span span{font-size:12px;color:var(--muted)}
 .statcard:hover{box-shadow:var(--shadow-up)}
