@@ -882,7 +882,7 @@ function render(){
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
-  const brand=title==="TotoFanta"?`<h1 class="brand">TOTOFANTA<span class="b1x2">1X2</span></h1>`:`<h1>${title}</h1>`;
+  const brand=title==="TotoFanta"?`<h1 class="brand" aria-label="TotoFanta"><span class="bt">TOTO</span><span class="bf">FANTA</span></h1>`:`<h1>${title}</h1>`;
   const meNick=myMember()?.nick||S.localUsers.find(u=>u.id===S.uid)?.name||S.email||"?";
   const rightBtn=bare||S.screen==="profilo"?"<span></span>":`<button class="avatar" data-act="openProfile" aria-label="Profilo">${esc((meNick.trim()[0]||"?").toUpperCase())}</button>`;
   app.innerHTML=`<header class="top"><div class="col">${leftBtn}${brand}${rightBtn}</div></header>

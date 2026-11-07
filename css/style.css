@@ -16,20 +16,20 @@ img{max-width:100%}
   --f-ui:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-num:"Inter",system-ui,sans-serif;
   --f-disp:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
-  --r:16px; --nav-h:64px;
+  --r:16px; --nav-h:64px; --brand-accent:#2F64F2;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0A1222; --card:#131D33; --field:#0F1830; --ink:#EEF2FA; --muted:#8D9AB5; --line:#22304D;
   --blue:#2F64F2; --blue-ink:#FFFFFF; --blue-soft:#1B2B52; --blue-text:#8FB0FF;
   --win:#3DDC97; --win-soft:#11392B; --lose:#FF7A85; --lose-soft:#3A1720; --warn:#F5B84A; --warn-soft:#3A2A0E;
   --open-bg:#3DDC97; --open-ink:#0A1222;
-  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); color-scheme:dark}}
+  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); --brand-accent:#6C93FF; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0A1222; --card:#131D33; --field:#0F1830; --ink:#EEF2FA; --muted:#8D9AB5; --line:#22304D;
   --blue:#2F64F2; --blue-ink:#FFFFFF; --blue-soft:#1B2B52; --blue-text:#8FB0FF;
   --win:#3DDC97; --win-soft:#11392B; --lose:#FF7A85; --lose-soft:#3A1720; --warn:#F5B84A; --warn-soft:#3A2A0E;
   --open-bg:#3DDC97; --open-ink:#0A1222;
-  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); color-scheme:dark}
+  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); --brand-accent:#6C93FF; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-title);font-size:15px;line-height:1.4}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
@@ -297,7 +297,10 @@ h2,h3{font-family:var(--f-ui)}
 /* header */
 .top .col{padding-block:12px 8px}
 .top h1{font-family:var(--f-disp);font-weight:800;font-size:26px;text-transform:uppercase;letter-spacing:.03em}
-.top h1.brand{display:flex;align-items:center;justify-content:center;gap:8px;font-size:28px}
+/* titolo in cima (7/11, proposta A "corsivo veloce" senza linee): TOTO scuro, FANTA blu, corsivo condensato */
+.top h1.brand{display:flex;align-items:center;justify-content:center;gap:0;font-size:32px;font-style:italic;letter-spacing:.01em;line-height:1}
+.top h1.brand .bt{color:var(--ink)}
+.top h1.brand .bf{color:var(--brand-accent)}
 .b1x2{font-family:var(--f-disp);font-weight:700;font-size:13px;background:var(--blue);color:#fff;padding:2px 6px;border-radius:6px;letter-spacing:0}
 .iconbtn{width:44px;height:44px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
 .iconbtn:hover{background:var(--field)}
