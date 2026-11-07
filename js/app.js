@@ -441,7 +441,7 @@ const B=ONLINE?Online:Local;
    del browser cambiano schermata invece di uscire dal sito. Menu laterale, finestre e aiuti aggiungono un passo
    alla cronologia, così Indietro li chiude. Nessun ricaricamento: cambia solo la parte dopo "#".
    Gli indirizzi #lega=<nome> (inviti) e quelli di accesso di Supabase non vengono toccati. */
-const ROUTES=["home","pronostici","classifica","risultati","calendario","statistiche","profilo","lega","admin","leghe","create"];
+const ROUTES=["home","pronostici","classifica","risultati","calendario","statistiche","impostazioni","profilo","lega","admin","leghe","create"];
 const ROUTE_NAME={create:"crea",admin:"lega/admin"};
 function routeHash(){
   const sc=S.screen;if(!ROUTES.includes(sc)||sc==="home")return "#/";
@@ -753,6 +753,7 @@ const ACT={
     safe(async()=>{await B.deleteLeague();S.confirm=null;selectLeague(null);pickDefaultLeague();toast("Lega eliminata");go("home")})},
   // ---- calendario Serie A (pubblico) e pannello amministratore
   openStats:()=>{S.stats={data:null,lid:S.lid,err:""};if(S.screen!=="statistiche")go("statistiche");else render();B.myPicksAll().then(d=>{if(S.stats){S.stats.data=d;if(!d.some(x=>x.lid===S.stats.lid))S.stats.lid=d[0]?.lid||null;render()}}).catch(e=>{if(S.stats){S.stats.err=e.message||"Errore";render()}})},
+  theme:d=>{const v=["auto","light","dark"].includes(d.v)?d.v:"auto";try{localStorage.setItem("totofanta-theme",v)}catch{}if(window.applyTheme)applyTheme(v);render()},
   openCal:d=>{S.calN=+d.n||S.calN||nextCalendarRound();go("calendario")},
   calStep:d=>{S.calN=Math.min(38,Math.max(1,(S.calN||nextCalendarRound())+(+d.d)));render()},
   admStep:d=>{S.admN=Math.min(38,Math.max(1,(S.admN||adminDefaultRound())+(+d.d)));S.admEdit=null;S.formErr="";render()},
@@ -864,9 +865,9 @@ function render(){
   const needLogin=ONLINE&&S.authReady&&!S.uid;
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
   if(ADMIN_PAGE)return renderAdminPage(needLogin);
-  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":S.screen==="profilo"?"Profilo":S.screen==="statistiche"?"Statistiche":"TotoFanta";
+  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":S.screen==="profilo"?"Profilo":S.screen==="statistiche"?"Statistiche":S.screen==="impostazioni"?"Impostazioni":"TotoFanta";
   const bare=needLogin||recovery||S.boot||!S.authReady;
-  const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
+  const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",impostazioni:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
   const leftBtn=bare?"<span></span>":(backTo?`<button class="iconbtn" data-act="go" data-s="${backTo}" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
@@ -877,6 +878,7 @@ function render(){
   else if(S.screen==="profilo")body=vProfile();
   else if(S.screen==="calendario")body=vCalendar();
   else if(S.screen==="statistiche")body=vStats();
+  else if(S.screen==="impostazioni")body=vSettings();
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
@@ -939,6 +941,8 @@ function vDrawer(){
    <button class="dl" data-act="openStats">${I.stats}Statistiche</button>
    <div class="grp">Serie A</div>
    <button class="dl" data-act="openCal">${I.cal}Calendario</button>
+   <div class="grp">App</div>
+   <button class="dl" data-act="go" data-s="impostazioni">${I.cog}Impostazioni</button>
   </nav><p class="dsrc">Football data provided by the Football-Data.org API · <a href="termini.html">Termini</a> · <a href="privacy.html">Privacy</a></p></aside>`;
 }
 function vLeave(){return `<div class="scrim" data-act="leaveStay"></div><div class="card modal" role="alertdialog" aria-modal="true" aria-labelledby="lvt"><h2 id="lvt">Pronostici non salvati</h2><p class="small" style="font-family:var(--f-ui)">Hai modificato dei pronostici senza salvarli. Se esci ora le modifiche vanno perse.</p>
@@ -1204,6 +1208,15 @@ function roundChart(st){
       ${n===bestN?`<text x="${x+bw/2}" y="${y-4}" text-anchor="middle" class="sval">${f2(r.pts)}</text>`:""}<text x="${x+bw/2}" y="${H-4}" text-anchor="middle" class="slab">${n}</text></g>`}).join("");
   return `<div class="schart"><div class="row"><b class="grow">Punti per giornata</b><span class="small muted">migliore: ${bestN}ª</span></div>
    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Punti per giornata">${`<line x1="0" x2="${W}" y1="${H-pad}" y2="${H-pad}" class="sbase"/>`}${bars}</svg></div>`;
+}
+
+/* ---- Impostazioni (7/11): per ora il tema; la scelta resta in questo browser ---- */
+function curTheme(){try{return localStorage.getItem("totofanta-theme")||"auto"}catch{return "auto"}}
+function vSettings(){
+  const t=curTheme();const opt=(v,l,d)=>`<button type="button" class="themeopt" role="radio" aria-checked="${t===v}" data-act="theme" data-v="${v}"><b>${l}</b><span>${d}</span></button>`;
+  return `<section class="card"><h3>Aspetto</h3><div class="themegrp" role="radiogroup" aria-label="Tema">
+   ${opt("auto","Automatico","Come il dispositivo")}${opt("light","Chiaro","Sempre chiaro")}${opt("dark","Scuro","Sempre scuro")}</div>
+   <p class="small muted" style="font-family:var(--f-ui)">La scelta vale per questo dispositivo.</p></section>`;
 }
 
 /* ---- Classifica (5.1) ---- */
