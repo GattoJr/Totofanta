@@ -1211,12 +1211,14 @@ function vCalendar(){
   if(!S.fixtures.length)return html+noCalendar();
   const n=S.calN||(S.calN=nextCalendarRound());
   html+=roundNav(n,"calStep","cal-n");
-  html+=`<section class="card"><div class="list">${fixturesOf(n).map(f=>{
-    const res=f.hg!=null?`<span class="score">${f.hg}-${f.ag}</span>`:"";
-    const when=f.kickoff?`${fmtDow(f.kickoff)} · ${fmtTime(f.kickoff)}`:`<span class="muted">Orario da definire · indicativa ${f.day?fmtDow(f.day):"—"}</span>`;
-    return `<div class="cal-m"><div class="t">${crest(f.home)}<span>${esc(f.home)}</span><span class="muted">–</span><span>${esc(f.away)}</span>${crest(f.away)}</div><div class="w">${res||when}</div></div>`}).join("")}</div>
-   <p class="small muted" style="font-family:var(--f-ui)">Gli accoppiamenti sono quelli ufficiali; date e orari sono provvisori e vengono aggiornati man mano.</p>
-</section>`;
+  /* tre colonne: incontro (casa sopra, ospite sotto, stemmi allineati), data, risultato ("–" se non giocata) */
+  html+=`<section class="card"><div class="calt" role="table" aria-label="Partite della ${n}ª giornata">
+   <div class="calr calh" role="row"><span role="columnheader">Incontro</span><span role="columnheader">Data</span><span role="columnheader">Risultato</span></div>
+   ${fixturesOf(n).map(f=>{
+    const when=f.kickoff?`<b>${fmtDow(f.kickoff)}</b><span>${fmtTime(f.kickoff)}</span>`:`<b>${f.day?fmtDow(f.day):"—"}</b><span class="tbd">da definire</span>`;
+    const res=f.hg!=null&&f.ag!=null?`<b>${f.hg}-${f.ag}</b>`:`<span class="muted">–</span>`;
+    return `<div class="calr" role="row"><span class="calteams" role="cell"><span class="ct">${crest(f.home)}<span>${esc(f.home)}</span></span><span class="ct">${crest(f.away)}<span>${esc(f.away)}</span></span></span><span class="calwhen" role="cell">${when}</span><span class="calres" role="cell">${res}</span></div>`}).join("")}
+  </div></section>`;
   return html;
 }
 

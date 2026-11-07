@@ -627,3 +627,16 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .schart .sbase{stroke:var(--line);stroke-width:1}
 .schart .slab{font-size:10px;fill:var(--muted);font-family:var(--f-ui)}
 .schart .sval{font-size:10px;fill:var(--ink);font-weight:700;font-family:var(--f-ui)}
+/* Calendario: tre colonne (incontro, data, risultato) */
+.calt{display:flex;flex-direction:column;font-family:var(--f-ui)}
+.calr{display:grid;grid-template-columns:minmax(0,1fr) 92px 68px;align-items:center;gap:10px;padding:10px 2px;border-top:1px solid var(--line)}
+.calr.calh{border-top:0;padding-top:0;font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.calr>:nth-child(2),.calr>:nth-child(3){text-align:center}
+.calteams{display:flex;flex-direction:column;gap:6px;min-width:0}
+.calteams .ct{display:flex;align-items:center;gap:8px;min-width:0;font-size:14.5px;font-weight:500}
+.calteams .ct>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.calwhen{display:flex;flex-direction:column;gap:2px;font-size:13px}
+.calwhen b{font-weight:600}
+.calwhen span{color:var(--muted)}
+.calwhen .tbd{color:var(--warn,#b26a00)}
+.calres b{font-family:var(--f-num);font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
