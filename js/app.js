@@ -436,8 +436,75 @@ const Online={
 
 const B=ONLINE?Online:Local;
 
+/* ===================== Indirizzi delle schermate (7/11) =====================
+   Ogni schermata ha il suo indirizzo dopo "#/" (es. #/calendario/12): ricaricando si resta lì, Indietro e Avanti
+   del browser cambiano schermata invece di uscire dal sito. Menu laterale, finestre e aiuti aggiungono un passo
+   alla cronologia, così Indietro li chiude. Nessun ricaricamento: cambia solo la parte dopo "#".
+   Gli indirizzi #lega=<nome> (inviti) e quelli di accesso di Supabase non vengono toccati. */
+const ROUTES=["home","pronostici","classifica","risultati","calendario","statistiche","profilo","lega","admin","leghe","create"];
+const ROUTE_NAME={create:"crea",admin:"lega/admin"};
+function routeHash(){
+  const sc=S.screen;if(!ROUTES.includes(sc)||sc==="home")return "#/";
+  let h="#/"+(ROUTE_NAME[sc]||sc);
+  if(sc==="calendario"&&S.calN)h+="/"+S.calN;
+  if(sc==="risultati"&&S.resN)h+="/"+S.resN;
+  if(sc==="pronostici"&&S.roundSel)h+="/"+S.roundSel;
+  return h;
+}
+function parseRoute(h){
+  const m=/^#\/(.*)$/.exec(h||"");if(!m)return null;
+  const parts=m[1].split("/").filter(Boolean);if(!parts.length)return{screen:"home"};
+  if(parts[0]==="lega")return{screen:parts[1]==="admin"?"admin":"lega"};
+  if(parts[0]==="crea")return{screen:"create"};
+  if(!ROUTES.includes(parts[0]))return{screen:"home"};
+  const n=+parts[1];return{screen:parts[0],n:n>=1&&n<=38?n:null};
+}
+const overlayOpen=()=>!!(S.drawer||S.modal||S.help||S.leave);
+const H={skipPop:0,lastScreen:null,ready:false};
+function authHash(){const h=location.hash||"";return /access_token|refresh_token|type=|error=/.test(h)}
+function syncHistory(){
+  if(ADMIN_PAGE||!H.ready||authHash()||/^#(lega=|invito-)/.test(location.hash||""))return;
+  const want=routeHash();const st=history.state||{};const ov=overlayOpen();
+  try{
+    if(ov&&!st.ov){if(location.hash!==want)history.replaceState({},"",want);history.pushState({ov:1},"",want)}
+    else if(!ov&&st.ov){if(location.hash!==want)history.replaceState({},"",want);else{H.skipPop++;history.back()}}
+    else if(location.hash!==want){if(H.lastScreen===S.screen)history.replaceState(st.ov?{ov:1}:{},"",want);else history.pushState({},"",want)}
+  }catch{}
+  H.lastScreen=S.screen;
+}
+function applyRoute(r){
+  if(!r)return;
+  if(r.screen==="calendario")S.calN=r.n||S.calN||nextCalendarRound();
+  if(r.screen==="risultati")S.resN=r.n||null;
+  if(r.screen==="pronostici"&&r.n)S.roundSel=r.n;
+  if(r.screen==="statistiche"&&S.screen!=="statistiche"){S.stats=null}
+  if(r.screen==="profilo"&&S.screen!=="profilo"){S.prof=null}
+  if(r.screen!==S.screen)go(r.screen);else render();
+}
+window.addEventListener("popstate",()=>{
+  if(ADMIN_PAGE)return;
+  if(H.skipPop>0){H.skipPop--;return}
+  /* Indietro con menu, finestra o aiuto aperti: si chiudono e si resta sulla schermata */
+  if(overlayOpen()){S.drawer=false;S.modal=null;S.help=null;S.leave=null;S.xfer=null;S.xferLeave=null;S.formErr="";render();return}
+  const r=parseRoute(location.hash);if(!r)return;
+  /* pronostici non salvati: si torna all'indirizzo della schedina e si chiede conferma */
+  if(S.screen==="pronostici"&&r.screen!=="pronostici"&&picksDirty()){
+    try{history.pushState({},"",routeHash())}catch{}
+    H.lastScreen=S.screen;guard(()=>applyRoute(r));return}
+  applyRoute(r);
+});
+/* all'avvio: la schermata dell'indirizzo (se c'è) */
+function initRoute(){
+  if(ADMIN_PAGE)return;
+  const r=parseRoute(location.hash);
+  if(r){S.screen=r.screen;if(r.screen==="calendario")S.calN=r.n||null;if(r.screen==="risultati")S.resN=r.n||null;if(r.screen==="pronostici")S.roundSel=r.n||null}
+  H.lastScreen=S.screen;try{if(r)history.replaceState({},"",location.hash)}catch{}
+  H.ready=true;
+}
+
 /* ===================== Avvio ===================== */
 async function boot(){
+  initRoute();
   render();
   handleHash();
   try{await B.init()}catch(e){console.error(e);toast("Avvio non riuscito: "+itMsg(e))}
@@ -637,7 +704,7 @@ const ACT={
     for(const r of rs){if(!await ACT.savePicks({r:r._id}))return}S.draft={};next&&next()},
   leaveDiscard:()=>{const next=S.leave?.next;S.leave=null;S.draft={};next&&next()},
   leaveStay:()=>{S.leave=null;render()},
-  openProfile:()=>{S.prof={nicks:null,pw:"",pw2:"",del:"",edit:{}};go("profilo");B.myNicknames().then(n=>{if(S.prof){S.prof.nicks=n;render()}}).catch(e=>toast(itMsg(e)))},
+  openProfile:()=>{S.prof={nicks:null,pw:"",pw2:"",del:"",edit:{}};if(S.screen!=="profilo")go("profilo");else render();B.myNicknames().then(n=>{if(S.prof){S.prof.nicks=n;render()}}).catch(e=>toast(itMsg(e)))},
   profNick:d=>{const lid=d.lid;const nick=(S.prof.edit[lid]??S.prof.nicks?.[lid]??"").trim();
     if(nick.length<2||nick.length>20)return toast("Il nickname deve avere da 2 a 20 caratteri");
     if(nick===S.prof.nicks?.[lid])return toast("Il nickname è già questo");
@@ -685,7 +752,7 @@ const ACT={
   delLeague:()=>{if(!isAdmin())return;if(S.confirm!=="delLeague"){S.confirm="delLeague";S.drawer=false;S.screen="admin";return render()}
     safe(async()=>{await B.deleteLeague();S.confirm=null;selectLeague(null);pickDefaultLeague();toast("Lega eliminata");go("home")})},
   // ---- calendario Serie A (pubblico) e pannello amministratore
-  openStats:()=>{S.stats={data:null,lid:S.lid,err:""};go("statistiche");B.myPicksAll().then(d=>{if(S.stats){S.stats.data=d;if(!d.some(x=>x.lid===S.stats.lid))S.stats.lid=d[0]?.lid||null;render()}}).catch(e=>{if(S.stats){S.stats.err=e.message||"Errore";render()}})},
+  openStats:()=>{S.stats={data:null,lid:S.lid,err:""};if(S.screen!=="statistiche")go("statistiche");else render();B.myPicksAll().then(d=>{if(S.stats){S.stats.data=d;if(!d.some(x=>x.lid===S.stats.lid))S.stats.lid=d[0]?.lid||null;render()}}).catch(e=>{if(S.stats){S.stats.err=e.message||"Errore";render()}})},
   openCal:d=>{S.calN=+d.n||S.calN||nextCalendarRound();go("calendario")},
   calStep:d=>{S.calN=Math.min(38,Math.max(1,(S.calN||nextCalendarRound())+(+d.d)));render()},
   admStep:d=>{S.admN=Math.min(38,Math.max(1,(S.admN||adminDefaultRound())+(+d.d)));S.admEdit=null;S.formErr="";render()},
@@ -821,6 +888,7 @@ function render(){
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
   if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
   placeNextBar();
+  syncHistory();
 }
 /* barra degli incontri: tiene la posizione scelta dall'utente, altrimenti parte dalla prima partita non finita */
 function placeNextBar(){const bar=document.getElementById("next-bar");if(!bar)return;const key=bar.dataset.round;
@@ -1102,6 +1170,7 @@ function statsOf(list){
   return st;
 }
 function vStats(){
+  if(!S.stats&&S.uid&&S.meLoaded&&!S.boot)setTimeout(()=>{if(!S.stats&&S.screen==="statistiche")ACT.openStats()},0);
   const X=S.stats;
   let html="";
   if(!X||(!X.data&&!X.err))return html+`<div class="empty">Caricamento…</div>`;
@@ -1179,7 +1248,8 @@ function adjustNotes(){const a=S.adjust||[];if(!a.length)return "";const nick=mi
 
 /* ---- Profilo: account, password (solo accesso con email), nickname nelle leghe, eliminazione account ---- */
 function vProfile(){
-  const P=S.prof||(S.prof={nicks:null,pw:"",pw2:"",del:"",edit:{}});
+  if(!S.prof&&S.uid&&!S.boot){setTimeout(()=>{if(!S.prof&&S.screen==="profilo")ACT.openProfile()},0)}
+  const P=S.prof||{nicks:null,pw:"",pw2:"",del:"",edit:{}};
   const google=(S.providers||[]).includes("google");const emailPw=(S.providers||[]).includes("email");
   const mine=myLeagues();
   const nm=myMember()?.nick||S.localUsers.find(u=>u.id===S.uid)?.name||"";
