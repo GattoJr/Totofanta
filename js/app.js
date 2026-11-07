@@ -138,6 +138,8 @@ const Local={
   },
   async approve(m){await LocalStore.set(`leagues/${S.lid}/members/${m._id}`,{nick:m.nick,status:"approved",joinedAt:m.joinedAt||Date.now()})},
   async removeMember(m){await LocalStore.del(`leagues/${S.lid}/members/${m._id}`)},
+  /* statistiche: i miei pronostici in ogni mia lega */
+  async myPicksAll(){return myLeagues().map(L=>{const picks={};for(const d of LocalStore.list(`leagues/${L._id}/picks`))if(d.uid===S.uid)Object.assign(picks,d.picks||{});return{lid:L._id,name:L.name,startRound:L.startRound,picks}})},
   async transferAdmin(lid,uid){const L=LocalStore.data[`leagues/${lid}`];if(!L||L.adminId!==S.uid)throw new Error("Solo l'admin può nominare un nuovo admin");await LocalStore.set(`leagues/${lid}`,{...L,adminId:uid})},
   async leaveLeague(){const lid=S.lid;await LocalStore.del(`leagues/${lid}/members/${S.uid}`);await this.removeFromMe(lid)},
   async joinOpen(name){const L=LocalStore.list("leagues").find(l=>l.nameKey===(name||"").trim().toLowerCase());return !L||!calRoundStarted(L.startRound)},
@@ -393,6 +395,12 @@ const Online={
     const {data,error}=await this.sb.from("members").select("id,league_id,user_id,nickname,status").in("league_id",mine.map(L=>L._id));
     if(error)throw new Error(itMsg(error));
     return mine.map(L=>({lid:L._id,name:L.name,members:data.filter(m=>m.league_id===L._id&&m.user_id!==S.uid&&m.status==="approved").map(m=>({mid:m.id,nick:m.nickname})).sort((a,b)=>a.nick.localeCompare(b.nick,"it",{sensitivity:"base"}))})).filter(x=>x.members.length);
+  },
+  /* statistiche: i miei pronostici in ogni mia lega (una richiesta per lega, al massimo 380 righe ciascuna) */
+  async myPicksAll(){
+    const {data:mem,error}=await this.sb.from("members").select("id,league_id").eq("user_id",S.uid);if(error)throw new Error(itMsg(error));
+    const ls=myLeagues();const rows=await Promise.all(mem.filter(m=>ls.some(L=>L._id===m.league_id)).map(m=>this.sb.from("picks").select("fixture_id,pick").eq("member_id",m.id).then(r=>({m,r}))));
+    return rows.map(({m,r})=>{if(r.error)throw new Error(itMsg(r.error));const L=ls.find(x=>x._id===m.league_id);const picks={};for(const x of r.data)picks[String(x.fixture_id)]=x.pick;return{lid:L._id,name:L.name,startRound:L.startRound,picks}});
   },
   async transferAdmin(lid,mid){this.check(await this.sb.rpc("transfer_admin",{p_league:lid,p_member:mid}))},
   async deleteAccount(){const {data,error}=await this.sb.functions.invoke("delete-account",{body:{confirm:"ELIMINA"}});if(error){let msg=error.message;try{msg=(await error.context.json()).error||msg}catch{}throw new Error(msg)}if(!data?.ok)throw new Error("Eliminazione non riuscita");await this.sb.auth.signOut()},
@@ -677,6 +685,7 @@ const ACT={
   delLeague:()=>{if(!isAdmin())return;if(S.confirm!=="delLeague"){S.confirm="delLeague";S.drawer=false;S.screen="admin";return render()}
     safe(async()=>{await B.deleteLeague();S.confirm=null;selectLeague(null);pickDefaultLeague();toast("Lega eliminata");go("home")})},
   // ---- calendario Serie A (pubblico) e pannello amministratore
+  openStats:()=>{S.stats={data:null,lid:S.lid,err:""};go("statistiche");B.myPicksAll().then(d=>{if(S.stats){S.stats.data=d;if(!d.some(x=>x.lid===S.stats.lid))S.stats.lid=d[0]?.lid||null;render()}}).catch(e=>{if(S.stats){S.stats.err=e.message||"Errore";render()}})},
   openCal:d=>{S.calN=+d.n||S.calN||nextCalendarRound();go("calendario")},
   calStep:d=>{S.calN=Math.min(38,Math.max(1,(S.calN||nextCalendarRound())+(+d.d)));render()},
   admStep:d=>{S.admN=Math.min(38,Math.max(1,(S.admN||adminDefaultRound())+(+d.d)));S.admEdit=null;S.formErr="";render()},
@@ -753,6 +762,7 @@ app.addEventListener("change",e=>{const t=e.target;
   if(t.id==="cal-n"){S.calN=+t.value;render();return}
   if(t.dataset&&t.dataset.xleave&&S.xferLeave){S.xferLeave.pick=t.value;S.formErr="";render();return}
   if(t.dataset&&t.dataset.xfer&&S.xfer){S.xfer.pick[t.dataset.xfer]=t.value;S.formErr="";render();return}
+  if(t.id==="st-l"&&S.stats){S.stats.lid=t.value;render();return}
   if(t.id==="res-n"){S.resN=+t.value;render();return}
   if(t.id==="adm-n"){S.admN=+t.value;S.admEdit=null;S.formErr="";render();return}
   if(t.id==="cf-logo"&&t.files[0]){const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement("canvas");c.width=c.height=128;const x=c.getContext("2d");const s=Math.min(img.width,img.height);x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,128,128);S.form.logo=c.toDataURL("image/jpeg",.85);render()};img.src=fr.result};fr.readAsDataURL(t.files[0])}
@@ -775,6 +785,7 @@ const I={
   close:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
   grid:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16M10 4v16"/></svg>`,
   rank:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 20V12h5v8M9 20V6h6v14M15 20v-5h5v5M3 20h18"/></svg>`,
+  stats:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>`,
   cal:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>`,
   league:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.3 3-5 6-5s5.4 1.7 6 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16.5 13.6c2.4 0 4 1.5 4.5 4.4"/></svg>`,
 };
@@ -786,9 +797,9 @@ function render(){
   const needLogin=ONLINE&&S.authReady&&!S.uid;
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
   if(ADMIN_PAGE)return renderAdminPage(needLogin);
-  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":S.screen==="profilo"?"Profilo":"TotoFanta";
+  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":S.screen==="profilo"?"Profilo":S.screen==="statistiche"?"Statistiche":"TotoFanta";
   const bare=needLogin||recovery||S.boot||!S.authReady;
-  const backTo={create:"home",leghe:"home",calendario:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
+  const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
   const leftBtn=bare?"<span></span>":(backTo?`<button class="iconbtn" data-act="go" data-s="${backTo}" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
@@ -798,6 +809,7 @@ function render(){
   else if(S.screen==="leghe")body=vMyLeagues();
   else if(S.screen==="profilo")body=vProfile();
   else if(S.screen==="calendario")body=vCalendar();
+  else if(S.screen==="statistiche")body=vStats();
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
@@ -855,6 +867,8 @@ function vDrawer(){
   <nav>
    <div class="grp">Leghe</div>
    <button class="dl" data-act="newLeague">${I.plus}Crea una lega</button><button class="dl" data-act="joinModal">${I.enter}Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">${I.league}Le mie leghe</button>
+   <div class="grp">Il tuo gioco</div>
+   <button class="dl" data-act="openStats">${I.stats}Statistiche</button>
    <div class="grp">Serie A</div>
    <button class="dl" data-act="openCal">${I.cal}Calendario</button>
   </nav><p class="dsrc">Football data provided by the Football-Data.org API · <a href="termini.html">Termini</a> · <a href="privacy.html">Privacy</a></p></aside>`;
@@ -1069,6 +1083,61 @@ function vResults(L){
   html+=`<section class="card"><div class="tbl rmx"><table><thead><tr><th class="mt">Partita</th>${head}</tr></thead><tbody>${rows}</tbody><tfoot>${foot}</tfoot></table></div>
    ${ONLINE&&B.pkRounds&&!B.pkRounds.has(r.n)?`<p class="small muted" style="font-family:var(--f-ui)">Carico le schedine della giornata…</p>`:""}<p class="small muted rlegend"><span class="lg"><span class="rc won"><b>1</b></span>Corretto</span><span class="lg"><span class="rc lost"><b>1</b></span>Sbagliato</span><span class="lg"><span class="rc wait"><b>1</b></span>In corso</span></p></section>`;
   return html;
+}
+
+/* ---- Statistiche (7/11): solo partite finite con un mio pronostico, dalla giornata di inizio di ogni lega ----
+   In alto tutte le leghe insieme (conteggi sommati, medie su tutti i pronostici), sotto una lega a scelta. */
+function statsOf(list){
+  const st={n:0,ok:0,pts:0,sumQ:0,sumQok:0,best:null,signs:{"1":{n:0,ok:0},"X":{n:0,ok:0},"2":{n:0,ok:0}},fav:{n:0,ok:0},out:{n:0,ok:0},rounds:{},lr:new Set()};
+  for(const L of list)for(const [fid,p] of Object.entries(L.picks||{})){
+    const f=fixtureById(+fid);if(!f||f.hg==null||f.ag==null||f.n<(L.startRound||1)||!S.calRounds[f.n])continue;
+    const o=S.odds[f.id];if(!o||!o.o1||!o.oX||!o.o2)continue;
+    const m={o1:o.o1,oX:o.oX,o2:o.o2,hg:f.hg,ag:f.ag};const q=oddOf(m,p);const ok=p===esito(m);const c=ok?cents(q):0;
+    st.n++;st.sumQ+=q;st.signs[p]&&st.signs[p].n++;
+    const favQ=Math.min(o.o1,o.oX,o.o2);const g=q===favQ?st.fav:st.out;g.n++;
+    const r=st.rounds[f.n]=st.rounds[f.n]||{n:0,ok:0,pts:0};r.n++;st.lr.add(L.lid+"|"+f.n);
+    if(ok){st.ok++;st.pts+=c;st.sumQok+=q;st.signs[p]&&st.signs[p].ok++;g.ok++;r.ok++;r.pts+=c;
+      if(!st.best||q>st.best.q)st.best={q,n:f.n,match:`${f.home}–${f.away}`,p}}
+  }
+  return st;
+}
+function vStats(){
+  const X=S.stats;
+  let html="";
+  if(!X||(!X.data&&!X.err))return html+`<div class="empty">Caricamento…</div>`;
+  if(X.err)return html+`<section class="card"><p class="err">${esc(X.err)}</p></section>`;
+  if(!X.data.length)return html+`<section class="card"><p class="center small muted" style="font-family:var(--f-ui)">Non fai parte di nessuna lega: le statistiche compaiono quando inizi a giocare.</p></section>`;
+  const pct=(a,b)=>b?Math.round(a*100/b)+"%":"–";const avg=(a,b)=>b?(a/b).toFixed(2):"–";
+  const block=st=>{
+    if(!st.n)return `<p class="center small muted" style="font-family:var(--f-ui)">Ancora nessuna partita finita con un tuo pronostico.</p>`;
+    /* media per giornata giocata in ogni lega (con più leghe: punti totali / giornate di tutte le leghe) */
+    const nr=st.lr.size;
+    const tiles=[["Pronostici valutati",st.n],["Corretti",`${st.ok} · ${pct(st.ok,st.n)}`],["Punti",f2(st.pts)],["Punti per giornata",nr?f2(Math.round(st.pts/nr)):"–"],["Quota media giocata",avg(st.sumQ,st.n)],["Quota media indovinata",avg(st.sumQok,st.ok)]];
+    const row=(l,g)=>`<tr><td>${l}</td><td class="n">${g.n}</td><td class="n">${g.ok}</td><td class="n"><b>${pct(g.ok,g.n)}</b></td></tr>`;
+    return `<div class="sgrid">${tiles.map(([l,v])=>`<div class="stile"><b>${v}</b><span>${l}</span></div>`).join("")}</div>
+     ${st.best?`<div class="sbest"><span class="small muted">Miglior colpo</span><b>${st.best.q.toFixed(2)}</b><span class="small">${esc(st.best.match)} · “${st.best.p}” · ${st.best.n}ª giornata</span></div>`:""}
+     <div class="tbl"><table class="stbl"><thead><tr><th>Segno</th><th class="n">Giocati</th><th class="n">Corretti</th><th class="n">%</th></tr></thead><tbody>
+      ${row("1",st.signs["1"])}${row("X",st.signs["X"])}${row("2",st.signs["2"])}
+      ${row("Favorita",st.fav)}${row("Sorpresa",st.out)}</tbody></table></div>
+     <p class="small muted" style="font-family:var(--f-ui)">Favorita: il risultato con la quota più bassa della partita; sorpresa: uno degli altri due.</p>`};
+  const all=statsOf(X.data);
+  html+=`<section class="card"><div class="row"><h3 class="grow">Tutte le leghe</h3><span class="small muted">${X.data.length} ${X.data.length===1?"lega":"leghe"}</span></div>${block(all)}</section>`;
+  const L=X.data.find(x=>x.lid===X.lid)||X.data[0];const one=statsOf([L]);
+  html+=`<section class="card"><div class="ressel flat"><label for="st-l">Lega</label><div class="selwrap"><select id="st-l">${X.data.map(x=>`<option value="${x.lid}"${x.lid===L.lid?" selected":""}>${esc(x.name)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div>
+   ${block(one)}${roundChart(one)}</section>`;
+  html+=`<p class="small muted center" style="font-family:var(--f-ui)">Contano solo le partite finite su cui hai fatto un pronostico; bonus e penalità dell'admin sono esclusi.</p>`;
+  return html;
+}
+/* punti per giornata della lega scelta: barre semplici, valore al passaggio del dito o del mouse */
+function roundChart(st){
+  const ns=Object.keys(st.rounds).map(Number).sort((a,b)=>a-b);if(ns.length<2)return "";
+  const max=Math.max(...ns.map(n=>st.rounds[n].pts),1);const bestN=ns.reduce((a,n)=>st.rounds[n].pts>st.rounds[a].pts?n:a,ns[0]);
+  const W=320,H=120,pad=18,bw=Math.min(22,(W-8)/ns.length-4),step=(W-8)/ns.length;
+  const bars=ns.map((n,i)=>{const r=st.rounds[n];const h=Math.max(r.pts?3:0,Math.round((H-pad-14)*r.pts/max));const x=4+i*step+(step-bw)/2;const y=H-pad-h;
+    return `<g class="sbar${n===bestN?" best":""}"><title>${n}ª giornata: ${f2(r.pts)} punti, ${r.ok}/${r.n} corretti</title><rect x="${x}" y="0" width="${bw}" height="${H-pad}" fill="transparent"/>${h?`<path d="M${x},${H-pad}V${y+4}a4,4 0 0 1 4,-4h${bw-8}a4,4 0 0 1 4,4V${H-pad}Z"/>`:""}
+      ${n===bestN?`<text x="${x+bw/2}" y="${y-4}" text-anchor="middle" class="sval">${f2(r.pts)}</text>`:""}<text x="${x+bw/2}" y="${H-4}" text-anchor="middle" class="slab">${n}</text></g>`}).join("");
+  return `<div class="schart"><div class="row"><b class="grow">Punti per giornata</b><span class="small muted">migliore: ${bestN}ª</span></div>
+   <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Punti per giornata">${`<line x1="0" x2="${W}" y1="${H-pad}" y2="${H-pad}" class="sbase"/>`}${bars}</svg></div>`;
 }
 
 /* ---- Classifica (5.1) ---- */
