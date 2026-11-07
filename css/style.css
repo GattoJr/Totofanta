@@ -100,8 +100,8 @@ input:focus,select:focus{outline:none;border-color:var(--blue)}
 .timer{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:2px;font-family:var(--f-ui);text-align:center}
 .timer .lbl{font-size:12px;color:var(--muted)}
 .timer .clock{font-family:var(--f-num);font-weight:700;font-size:26px;letter-spacing:.5px;font-variant-numeric:tabular-nums}
-.next{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 10px;scroll-snap-type:x mandatory}
-.mini{flex:none;width:184px;scroll-snap-align:start;background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:12px 10px 10px;display:flex;flex-direction:column;gap:10px}
+.next{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 10px;-webkit-overflow-scrolling:touch}
+.mini{flex:none;width:184px;background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:12px 10px 10px;display:flex;flex-direction:column;gap:10px}
 .mini .teams{display:flex;align-items:center;justify-content:space-between;gap:4px;font-weight:600;font-size:14px;white-space:nowrap}
 .mini .when{display:grid;grid-template-columns:1fr 1fr;font-family:var(--f-ui);font-size:12px;text-align:center}
 .mini .when span+span{border-left:1.5px solid var(--ink)}
@@ -337,7 +337,7 @@ input[type=text],input[type=email],input[type=password],input[type=number],input
 .stathead{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .statcard .statnick{align-self:auto;font-family:var(--f-ui);font-weight:700;font-size:16px;margin:0}
 .statcard .golink{align-self:auto;font-size:13px;font-weight:600;color:var(--blue-text)}
-.statcard .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;text-align:left}
+.statcard .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;text-align:left}
 .statcard .stats>span{background:var(--field);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:2px;border:0}
 .statcard .stats b{font-family:var(--f-disp);font-weight:800;font-size:30px;line-height:1}
 .statcard .stats span span{font-size:12px;color:var(--muted)}
@@ -602,3 +602,8 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 /* fonte dei dati in fondo al menu (richiesta dalle condizioni di football-data.org) */
 .drawer .dsrc{margin:auto 18px 18px;padding-top:12px;font-family:var(--f-ui);font-size:11.5px;color:var(--muted);line-height:1.4}
 .drawer .dsrc a{color:inherit}
+/* pulsante X nelle finestre */
+.modal .mclose{position:absolute;top:10px;right:10px;width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+.modal .mclose:hover{background:var(--line)}
+.modal .mclose svg{width:20px;height:20px}
+.modal h2{padding-right:36px}
