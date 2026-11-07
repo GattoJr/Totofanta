@@ -585,6 +585,7 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .rmx td.rc.won{background:var(--win-soft);color:var(--win)}
 .rmx td.rc.lost{color:var(--lose)}
 .rmx td.rc.lost b{opacity:.75}
+.rmx td.rc.lost i,.rmx td.rc.wait i{color:var(--muted);font-weight:600}
 .rmx td.rc.wait{color:var(--ink)}
 .rmx td.rc.none{color:var(--muted)}
 .rmx td.rc.me:not(.won){background:var(--blue-soft)}
@@ -593,11 +594,11 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .rmx tfoot td.rc b{font-size:15px}
 .rmx tfoot td.rc i{color:var(--muted)}
 .rlegend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-family:var(--f-ui)}
-.rlegend .lg{display:inline-flex;align-items:center;gap:5px}
-.rlegend .lg::before{content:"";width:12px;height:12px;border-radius:3px;border:1px solid var(--line)}
-.rlegend .lg.won::before{background:var(--win-soft);border-color:var(--win)}
-.rlegend .lg.lost::before{background:var(--card);border-color:var(--lose)}
-.rlegend .lg.wait::before{background:var(--card)}
+.rlegend .lg{display:inline-flex;align-items:center;gap:6px}
+.rlegend .rc{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:5px;border:1px solid var(--line);font-family:var(--f-num);font-size:13px;background:var(--card)}
+.rlegend .rc.won{background:var(--win-soft);color:var(--win);border-color:transparent}
+.rlegend .rc.lost{color:var(--lose)}
+.rlegend .rc.wait{color:var(--ink)}
 /* fonte dei dati in fondo al menu (richiesta dalle condizioni di football-data.org) */
 .drawer .dsrc{margin:auto 18px 18px;padding-top:12px;font-family:var(--f-ui);font-size:11.5px;color:var(--muted);line-height:1.4}
 .drawer .dsrc a{color:inherit}

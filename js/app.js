@@ -1035,19 +1035,18 @@ function vResults(L){
   pl.forEach((d,i)=>{const p=pl[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
   const me=pl.find(d=>d.m._id===S.uid);
   /* la propria colonna per prima (sul telefono è sempre visibile), poi gli altri in ordine di punti */
-  const cols=me?[me,...pl.filter(d=>d!==me)]:pl;const nDone=r.matches.filter(m=>esito(m)).length;
-  html+=`<section class="card"><div class="summary"><div><b>${nDone}/${r.matches.length}</b><span>Partite finite</span></div><div><b>${me?f2(me.pts):"–"}</b><span>I tuoi punti</span></div><div><b>${me?me.pos+"°":"–"}</b><span>Di giornata</span></div></div>
-   ${roundDone(r)?"":`<p class="center small muted" style="font-family:var(--f-ui)">Giornata in corso: i punti si aggiornano da soli a ogni risultato.</p>`}</section>`;
+  const cols=me?[me,...pl.filter(d=>d!==me)]:pl;
+
   const head=cols.map(d=>`<th class="pc${d.m._id===S.uid?" me":""}" title="${esc(d.m.nick)}"><span class="pnm">${d===me?"Tu":esc(d.m.nick)}</span></th>`).join("");
   const rows=r.matches.map(m=>{const e=esito(m);const started=matchLocked(r,m);
     const state=e?`<b>${m.hg}-${m.ag}</b> · ${e} ${oddOf(m,e)?oddOf(m,e).toFixed(2):""}`:started?`<span class="live">In corso</span>`:`${m.kickoff?fmtDow(m.kickoff)+" "+fmtTime(m.kickoff):"da giocare"}`;
     return `<tr><th class="mt" scope="row"><span class="mtt">${esc(abbr(m.home))}–${esc(abbr(m.away))}</span><span class="mts">${state}</span></th>${cols.map(d=>{const p=d.pk[m.id];
       const cls=!p?"none":!e?"wait":p===e?"won":"lost";
-      const inner=!p?"–":p===e?`<b>${p}</b><i>+${oddOf(m,p).toFixed(2)}</i>`:`<b>${p}</b>`;
+      const q=oddOf(m,p);const inner=!p?"–":`<b>${p}</b>${q?`<i>${p===e?"+":""}${q.toFixed(2)}</i>`:""}`;
       return `<td class="rc ${cls}${d.m._id===S.uid?" me":""}">${inner}</td>`}).join("")}</tr>`}).join("");
   const foot=`<tr class="tot"><th class="mt" scope="row">Totale</th>${cols.map(d=>`<td class="rc${d.m._id===S.uid?" me":""}"><b>${f2(d.pts)}</b><i>${d.pos}°</i></td>`).join("")}</tr>`;
   html+=`<section class="card"><div class="tbl rmx"><table><thead><tr><th class="mt">Partita</th>${head}</tr></thead><tbody>${rows}</tbody><tfoot>${foot}</tfoot></table></div>
-   ${ONLINE&&B.pkRounds&&!B.pkRounds.has(r.n)?`<p class="small muted" style="font-family:var(--f-ui)">Carico le schedine della giornata…</p>`:""}<p class="small muted rlegend"><span class="lg won">Indovinato</span><span class="lg lost">Sbagliato</span><span class="lg wait">In attesa</span>Dopo la tua colonna, gli altri in ordine di punti della giornata.</p></section>`;
+   ${ONLINE&&B.pkRounds&&!B.pkRounds.has(r.n)?`<p class="small muted" style="font-family:var(--f-ui)">Carico le schedine della giornata…</p>`:""}<p class="small muted rlegend"><span class="lg"><span class="rc won"><b>1</b></span>Corretto</span><span class="lg"><span class="rc lost"><b>1</b></span>Sbagliato</span><span class="lg"><span class="rc wait"><b>1</b></span>In corso</span></p></section>`;
   return html;
 }
 
@@ -1055,26 +1054,13 @@ function vResults(L){
 function vStandings(L){
   const rows=computeStandings(L,S.members,S.rounds,S.picks);
   const scored=S.rounds.filter(r=>r.matches.some(m=>esito(m)));
-  /* intestazione blu: nome della lega in grande e podio dei primi tre */
-  const lastN=scored.length?scored[scored.length-1].n:null;
-  const dayR=S.rankView!=="gen"&&scored.length?S.rounds.find(x=>"g"+x.n===S.rankView):null;
-  const podList=dayR?approved().map(m=>({nick:m.nick,uid:m._id,...roundScore(dayR,m._id)})).sort((a,b)=>(b.pts-a.pts)||(b.best-a.best)||a.nick.localeCompare(b.nick,"it",{sensitivity:"base"})).map((d,i,a)=>({nick:d.nick,uid:d.uid,pts:d.pts,best:d.best})).map((d,i,a)=>d)
-    :rows.map(r=>({nick:r.nick,uid:r.uid,pts:r.total,pos:r.pos}));
-  if(dayR)podList.forEach((d,i)=>{const p=podList[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
-  const podium=scored.length&&podList.length>=2?`<div class="podium">${[1,0,2].filter(i=>podList[i]).map(i=>{const x=podList[i];return `<div class="pod p${i+1}${x.uid===S.uid?" me":""}"><span class="pav">${esc((x.nick.trim()[0]||"?").toUpperCase())}</span><span class="pnick">${esc(x.nick)}</span><span class="ppts">${f2(x.pts)}</span><span class="pbase">${x.pos}</span></div>`}).join("")}</div>`:"";
-  let html=`<section class="rkhero"><span class="eyebrow">Classifica${dayR?` · ${dayR.n}ª giornata`:""}</span><h2 class="disp rkname${L.name.length>16?" long":""}">${esc(L.name)}</h2>${podium}</section>`;
-  if(scored.length)html+=`<div class="rounds" role="group" aria-label="Tipo di classifica"><button class="rchip" aria-pressed="${S.rankView==="gen"}" data-act="rank" data-v="gen">Generale</button>${scored.map(r=>`<button class="rchip" aria-pressed="${S.rankView==="g"+r.n}" data-act="rank" data-v="g${r.n}">${r.n}ª giornata</button>`).join("")}</div>`;
+  /* intestazione blu: nome della lega in grande (podio e classifiche di giornata tolti il 7/11) */
+  let html=`<section class="rkhero"><span class="eyebrow">Classifica</span><h2 class="disp rkname${L.name.length>16?" long":""}">${esc(L.name)}</h2></section>`;
   const v=(x)=>x?f2(x):"–";
-  if(!scored.length||S.rankView==="gen"){
+  {
     html+=`<section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
     ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos"><span class="posb${r.pos<=3?" p"+r.pos:""}">${r.pos}</span></td><td class="nm">${esc(r.nick)}${r.adj?` <span class="adjmark ${r.adj<0?"neg":"pos"}" title="${r.adj<0?"Penalità":"Bonus"} dell'admin">${r.adj>0?"+":"−"}${f2(Math.abs(r.adj))}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td><td class="n">${v(r.mq)}</td></tr>`).join("")}
-    </tbody></table></div>${scored.length?`<p class="small muted" style="font-family:var(--f-ui)">A pari punti decide il <b>Miglior punteggio di giornata (MP)</b>, poi la <b>Miglior quota (MQ)</b>.</p>`:""}${adjustNotes()}</section>`;
-  }else{
-    const r=S.rounds.find(x=>"g"+x.n===S.rankView);if(!r){S.rankView="gen";return vStandings(L)}
-    const day=approved().map(m=>({m,...roundScore(r,m._id)})).sort((a,b)=>(b.pts-a.pts)||(b.best-a.best)||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
-    day.forEach((d,i)=>{const p=day[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
-    html+=`<section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
-    ${day.map(d=>`<tr class="${d.m._id===S.uid?"me":""}"><td class="pos"><span class="posb${d.pos<=3?" p"+d.pos:""}">${d.pos}</span></td><td class="nm">${esc(d.m.nick)}</td><td class="n"><b>${f2(d.pts)}</b></td><td class="n">${v(d.best)}</td></tr>`).join("")}</tbody></table></div><p class="small muted" style="font-family:var(--f-ui)">A pari punti decide la <b>Miglior quota (MQ)</b> della giornata.</p></section>`;
+    </tbody></table></div>${adjustNotes()}</section>`;
   }
   return html;
 }
