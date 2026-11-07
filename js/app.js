@@ -1086,7 +1086,7 @@ function vResults(L){
 }
 
 /* ---- Statistiche (7/11): solo partite finite con un mio pronostico, dalla giornata di inizio di ogni lega ----
-   In alto tutte le leghe insieme (conteggi sommati, medie su tutti i pronostici), sotto una lega a scelta. */
+   Una lega alla volta, scelta dal menu a tendina (le statistiche di tutte le leghe insieme sono state tolte il 7/11). */
 function statsOf(list){
   const st={n:0,ok:0,pts:0,sumQ:0,sumQok:0,best:null,signs:{"1":{n:0,ok:0},"X":{n:0,ok:0},"2":{n:0,ok:0}},fav:{n:0,ok:0},out:{n:0,ok:0},rounds:{},lr:new Set()};
   for(const L of list)for(const [fid,p] of Object.entries(L.picks||{})){
@@ -1110,7 +1110,6 @@ function vStats(){
   const pct=(a,b)=>b?Math.round(a*100/b)+"%":"–";const avg=(a,b)=>b?(a/b).toFixed(2):"–";
   const block=st=>{
     if(!st.n)return `<p class="center small muted" style="font-family:var(--f-ui)">Ancora nessuna partita finita con un tuo pronostico.</p>`;
-    /* media per giornata giocata in ogni lega (con più leghe: punti totali / giornate di tutte le leghe) */
     const nr=st.lr.size;
     const tiles=[["Pronostici valutati",st.n],["Corretti",`${st.ok} · ${pct(st.ok,st.n)}`],["Punti",f2(st.pts)],["Punti per giornata",nr?f2(Math.round(st.pts/nr)):"–"],["Quota media giocata",avg(st.sumQ,st.n)],["Quota media indovinata",avg(st.sumQok,st.ok)]];
     const row=(l,g)=>`<tr><td>${l}</td><td class="n">${g.n}</td><td class="n">${g.ok}</td><td class="n"><b>${pct(g.ok,g.n)}</b></td></tr>`;
@@ -1120,8 +1119,6 @@ function vStats(){
       ${row("1",st.signs["1"])}${row("X",st.signs["X"])}${row("2",st.signs["2"])}
       ${row("Favorita",st.fav)}${row("Sorpresa",st.out)}</tbody></table></div>
      <p class="small muted" style="font-family:var(--f-ui)">Favorita: il risultato con la quota più bassa della partita; sorpresa: uno degli altri due.</p>`};
-  const all=statsOf(X.data);
-  html+=`<section class="card"><div class="row"><h3 class="grow">Tutte le leghe</h3><span class="small muted">${X.data.length} ${X.data.length===1?"lega":"leghe"}</span></div>${block(all)}</section>`;
   const L=X.data.find(x=>x.lid===X.lid)||X.data[0];const one=statsOf([L]);
   html+=`<section class="card"><div class="ressel flat"><label for="st-l">Lega</label><div class="selwrap"><select id="st-l">${X.data.map(x=>`<option value="${x.lid}"${x.lid===L.lid?" selected":""}>${esc(x.name)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div>
    ${block(one)}${roundChart(one)}</section>`;
