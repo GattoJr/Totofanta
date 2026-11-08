@@ -10,12 +10,11 @@ const TEAMS=["Atalanta","Bologna","Cagliari","Como","Fiorentina","Frosinone","Ge
 const RATING={Inter:88,Napoli:86,Milan:84,Juventus:84,Atalanta:83,Roma:82,Como:81,Lazio:79,Bologna:79,Fiorentina:77,Torino:74,Udinese:73,Genoa:72,Sassuolo:72,Cagliari:71,Parma:71,Lecce:70,Monza:69,Venezia:68,Frosinone:67};
 /* colori sociali per i badge (non sono loghi ufficiali) */
 const COLORS={Atalanta:["#1e71b8","#111"],Bologna:["#a21c26","#1a2f48"],Cagliari:["#a8102c","#002350"],Como:["#1c3f94","#e8eef8"],Fiorentina:["#5b2b82","#e9dff2"],Frosinone:["#ffd400","#0055a4"],Genoa:["#c8102e","#002a5c"],Inter:["#0068a8","#111"],Juventus:["#111","#f2f2f2"],Lazio:["#87d0f0","#0b2240"],Lecce:["#f7d117","#d71920"],Milan:["#d0101b","#111"],Monza:["#e2001a","#f5f5f5"],Napoli:["#12a0d7","#0b3b6e"],Parma:["#ffd200","#1b4b9a"],Roma:["#8e1f2f","#f0bc42"],Sassuolo:["#00a752","#111"],Torino:["#8a1e03","#f2e6dc"],Udinese:["#f2f2f2","#111"],Venezia:["#f26522","#0f5132"]};
-const TB_TEXT="Miglior punteggio di giornata (MP), poi Miglior quota (MQ)";
+const TB_TEXT="Miglior punteggio di giornata (MP)";
 const HELP={
   access:"Privata: si entra con il nome della lega e la password che scegli qui. Il link d'invito apre già la schermata con il nome della lega: basta scrivere la password.\nPubblica: chiunque può entrare con il nome della lega o con il link d'invito, senza password.",
   mp:"Miglior punteggio: il punteggio più alto ottenuto in una singola giornata.",
-  mq:"Miglior quota: la quota più alta indovinata con un singolo pronostico.",
-  tie:"A pari punti si guarda il Miglior punteggio di giornata (MP): è più in alto chi ha fatto più punti in una singola giornata.\nSe anche l'MP è uguale si guarda la Miglior quota (MQ): è più in alto chi ha indovinato la quota più alta.\nSe MP e MQ sono uguali i giocatori condividono la stessa posizione (es. due secondi posti) e le posizioni successive scalano (il giocatore dopo è quarto).",
+  tie:"A pari punti si guarda il Miglior punteggio di giornata (MP): è più in alto chi ha fatto più punti in una singola giornata.\nSe anche l'MP è uguale i giocatori condividono la stessa posizione (es. due secondi posti) e le posizioni successive scalano (il giocatore dopo è quarto).",
 };
 
 /* ===================== Configurazione ===================== */
@@ -611,28 +610,29 @@ function currentRound(){const list=S.rounds;if(!list.length)return null;return l
 /* ===================== Punteggi e classifica ===================== */
 /* Classifica generale.
    - nessun risultato: tutti a 0, posizioni in ordine alfabetico
-   - poi: punti, a pari punti MP (miglior punteggio di giornata), poi MQ (miglior quota);
-     con punti, MP e MQ uguali la posizione è la stessa e le successive scalano (1, 2, 2, 4) */
+   - poi: punti, a pari punti MP (miglior punteggio di giornata);
+     con punti e MP uguali la posizione è la stessa e le successive scalano (1, 2, 2, 4).
+     La miglior quota (MQ) è stata tolta dal gioco l'8/11. */
 function computeStandings(L,members,rounds,picks){
   const byId={};for(const p of picks)byId[p._id]=p;
-  const rows=members.filter(m=>m.status==="approved").map(m=>({uid:m._id,mid:m.mid,nick:m.nick,total:0,correct:0,played:0,perRound:{},mp:0,mq:0,adj:0}));
+  const rows=members.filter(m=>m.status==="approved").map(m=>({uid:m._id,mid:m.mid,nick:m.nick,total:0,correct:0,played:0,perRound:{},mp:0,adj:0}));
   let anyScored=false;
-  /* bonus e penalità dell'admin della lega: cambiano il totale, non MP né MQ */
+  /* bonus e penalità dell'admin della lega: cambiano il totale, non l'MP */
   for(const a of S.adjust||[]){const row=rows.find(r=>r.mid===a.mid);if(row){row.adj+=a.pts;row.total+=a.pts;anyScored=true}}
   for(const r of rounds){
     const scored=r.matches.filter(m=>esito(m));if(!scored.length)continue;anyScored=true;
     for(const row of rows){
       let pts=0,any=false;
-      if(S.scores){const x=S.scores.find(y=>y.mid===row.mid&&y.n===r.n);if(x){any=true;pts=x.pts;row.correct+=x.correct;if(x.best>row.mq)row.mq=x.best}}
+      if(S.scores){const x=S.scores.find(y=>y.mid===row.mid&&y.n===r.n);if(x){any=true;pts=x.pts;row.correct+=x.correct}}
       else{const pk=byId[`g${r.n}~${row.uid}`]?.picks||{};
-      for(const m of scored){const p=pk[m.id];if(p)any=true;if(p&&p===esito(m)){const c=cents(oddOf(m,p));pts+=c;row.correct++;if(c>row.mq)row.mq=c}}}
+      for(const m of scored){const p=pk[m.id];if(p)any=true;if(p&&p===esito(m)){const c=cents(oddOf(m,p));pts+=c;row.correct++}}}
       row.perRound[r.n]=pts;row.total+=pts;if(pts>row.mp)row.mp=pts;if(any)row.played++;
     }
   }
   const alpha=(a,b)=>a.nick.localeCompare(b.nick,"it",{sensitivity:"base"});
   if(!anyScored){rows.sort(alpha);rows.forEach((r,i)=>r.pos=i+1);return rows}
-  rows.sort((a,b)=>(b.total-a.total)||(b.mp-a.mp)||(b.mq-a.mq)||alpha(a,b));
-  rows.forEach((r,i)=>{const p=rows[i-1];r.pos=(p&&p.total===r.total&&p.mp===r.mp&&p.mq===r.mq)?p.pos:i+1});
+  rows.sort((a,b)=>(b.total-a.total)||(b.mp-a.mp)||alpha(a,b));
+  rows.forEach((r,i)=>{const p=rows[i-1];r.pos=(p&&p.total===r.total&&p.mp===r.mp)?p.pos:i+1});
   return rows;
 }
 function roundScore(r,uid){const pk=pickDoc(`g${r.n}`,uid)?.picks||{};let pts=0,ok=0,count=0,best=0;for(const m of r.matches){const p=pk[m.id];if(p)count++;const e=esito(m);if(e&&p===e){const c=cents(oddOf(m,p));pts+=c;ok++;if(c>best)best=c}}
@@ -997,8 +997,8 @@ function vJoin(){
   ${sameName&&f.closed&&!missing?`<p class="err">La lega è già iniziata: le iscrizioni sono chiuse.</p>`:""}
   ${isPublic?`<p class="small muted" style="font-family:var(--f-ui)">Lega pubblica: non serve la password.</p>`
     :`<label class="flabel" for="jf-pw">Password della lega${f.fromLink?"":" · solo leghe private"}</label><input type="password" id="jf-pw" data-bind="form.pw" value="${esc(f.pw)}" autocomplete="off">`}
-  <label class="flabel" for="jf-nick">Il tuo nickname · come ti vedranno gli altri</label>
-  <input type="text" id="jf-nick" data-bind="form.nick" value="${esc(f.nick)}" placeholder="Es. Vale" maxlength="20">
+  <label class="flabel" for="jf-nick">Nickname</label>
+  <input type="text" id="jf-nick" data-bind="form.nick" value="${esc(f.nick)}" placeholder="Es. Bomber10" maxlength="20">
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
   <button class="btn wide" type="submit" ${S.busy||(sameName&&f.closed)?"disabled":""}>${S.busy?"Attendi…":"Unisciti"}</button></form>`;
 }
@@ -1146,8 +1146,8 @@ function vResults(L){
   const st=r2=>roundDone(r2)?"Conclusa":"In corso";
   html+=`<div class="ressel"><label for="res-n">Giornata</label><div class="selwrap"><select id="res-n">${list.map(x=>`<option value="${x.n}"${x.n===r.n?" selected":""}>${x.n}ª giornata · ${st(x)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div>`;
   /* punti e posizione della giornata (pari punti: miglior quota, poi nome), per la riga Totale */
-  const pl=approved().map(m=>({m,pk:pickDoc(r._id,m._id)?.picks||{},...roundScore(r,m._id)})).sort((a,b)=>(b.pts-a.pts)||(b.best-a.best)||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
-  pl.forEach((d,i)=>{const p=pl[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
+  const pl=approved().map(m=>({m,pk:pickDoc(r._id,m._id)?.picks||{},...roundScore(r,m._id)})).sort((a,b)=>(b.pts-a.pts)||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
+  pl.forEach((d,i)=>{const p=pl[i-1];d.pos=(p&&p.pts===d.pts)?p.pos:i+1});
   const me=pl.find(d=>d.m._id===S.uid);
   /* la propria colonna per prima (sul telefono è sempre visibile), poi gli altri in ordine di punti */
   /* colonne (8/11): la mia per prima, poi gli altri in ordine di classifica generale (stessa classifica e spareggi
@@ -1243,8 +1243,8 @@ function vStandings(L){
   let html=leagueTitle();
   const v=(x)=>x?f2(x):"–";
   {
-    html+=`<section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
-    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos"><span class="posb${r.pos<=3?" p"+r.pos:""}">${r.pos}</span></td><td class="nm">${esc(r.nick)}${r.adj?` <span class="adjmark ${r.adj<0?"neg":"pos"}" title="${r.adj<0?"Penalità":"Bonus"} dell'admin">${r.adj>0?"+":"−"}${f2(Math.abs(r.adj))}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td><td class="n">${v(r.mq)}</td></tr>`).join("")}
+    html+=`<section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th></tr></thead><tbody>
+    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos"><span class="posb${r.pos<=3?" p"+r.pos:""}">${r.pos}</span></td><td class="nm">${esc(r.nick)}${r.adj?` <span class="adjmark ${r.adj<0?"neg":"pos"}" title="${r.adj<0?"Penalità":"Bonus"} dell'admin">${r.adj>0?"+":"−"}${f2(Math.abs(r.adj))}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td></tr>`).join("")}
     </tbody></table></div>${adjustNotes()}</section>`;
   }
   /* riquadro in fondo (8/11): il miglior punteggio di giornata della lega (MP), con giocatore e giornata; a pari merito tutti */
@@ -1272,7 +1272,7 @@ function vInfo(L){
   <section class="card"><h3>Regolamento lega</h3><table class="kv"><tbody>
    <tr><td>Privacy</td><td>${L.type==="private"?"Lega Privata":"Lega Pubblica"}</td></tr>
    <tr><td>Modalità</td><td>Quote</td></tr>
-   <tr><td>Criteri spareggio</td><td>1. Miglior punteggio di giornata (MP)<br>2. Miglior quota (MQ)</td></tr>
+   <tr><td>Criteri spareggio</td><td>Miglior punteggio di giornata (MP); a parità di MP la posizione è condivisa</td></tr>
    <tr><td>Durata</td><td>Dalla ${L.startRound}ª alla 38ª giornata</td></tr>
    <tr><td>Inserimento pronostici</td><td>Fino al fischio d'inizio della giornata</td></tr></tbody></table></section>
   <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ghost" data-act="removeMember" data-u="${m._id}">Rimuovi</button>`:""}</div>${admin&&S.confirm==="rm-"+m._id?`<div class="confirmrow"><p class="small" style="font-family:var(--f-ui)">Rimuovere <b>${esc(m.nick)}</b> dalla lega? Verranno eliminate anche le sue schedine e uscirà dalla classifica. Non si può annullare.</p><div class="btns2"><button class="btn sm danger" data-act="removeMemberOk" data-u="${m._id}">Rimuovi</button><button class="btn sm sec" data-act="removeMemberNo">Annulla</button></div></div>`:""}`).join("")}</div></section>
@@ -1389,8 +1389,8 @@ function vCreate(){
    <div class="fld"><div class="flabel">Accesso<button class="help" data-act="help" data-k="access" aria-label="Spiegazione">?</button></div><div class="seg" role="radiogroup" aria-label="Accesso alla lega">${seg("private","Privata")}${seg("public","Pubblica")}</div></div>
    ${f.type==="private"?`<div class="fld"><label class="flabel" for="cf-pw">Password della lega · almeno 6 caratteri</label><input type="text" id="cf-pw" data-bind="form.pw" value="${esc(f.pw)}" maxlength="30" autocomplete="off"></div>`:""}
    <div class="fld"><label class="flabel" for="cf-start">Giornata di inizio</label>${firstOpenRound()?`<div class="selwrap"><select id="cf-start" data-bind="form.start">${Array.from({length:38},(_,i)=>i+1).filter(n=>!calRoundStarted(n)).map(n=>`<option value="${n}"${+f.start===n?" selected":""}>${n}ª giornata</option>`).join("")}</select>${CHEV}</div><p class="small muted" style="font-family:var(--f-ui)">Si può partire solo da una giornata non ancora iniziata.</p>`:`<p class="small" style="font-family:var(--f-ui)">Il campionato è finito: non ci sono giornate da cui partire.</p>`}</div>
-   <div class="fld"><label class="flabel" for="cf-nick">Il tuo nickname · come ti vedranno gli altri</label><input type="text" id="cf-nick" data-bind="form.nick" value="${esc(f.nick)}" maxlength="20" placeholder="Es. Vale"></div>
-   <div class="fld"><div class="flabel">Criterio di spareggio</div><div class="tiebox"><p><b>1.</b> A pari punti è più in alto chi ha il <b>Miglior punteggio di giornata (MP)</b>: i punti più alti fatti in una singola giornata.</p><p><b>2.</b> Se anche l'MP è uguale, conta la <b>Miglior quota (MQ)</b>: la quota più alta indovinata con un singolo pronostico.</p><p><b>3.</b> Se MP e MQ sono uguali, i giocatori condividono la posizione (es. due secondi posti) e chi segue scala di conseguenza.</p></div></div>
+   <div class="fld"><label class="flabel" for="cf-nick">Nickname</label><input type="text" id="cf-nick" data-bind="form.nick" value="${esc(f.nick)}" maxlength="20" placeholder="Es. Bomber10"></div>
+   <div class="fld"><div class="flabel">Criterio di spareggio</div><div class="tiebox"><p><b>1.</b> <b>Miglior punteggio di giornata (MP)</b>: i punti più alti fatti in una singola giornata. In caso di pareggio, vince chi ha il MP maggiore.</p><p><b>2.</b> In caso di stesso MP, i giocatori condividono la posizione.</p></div></div>
    ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}<button class="btn wide" data-act="create" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Crea lega"}</button></section>`;
 }
 

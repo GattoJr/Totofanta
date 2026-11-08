@@ -704,3 +704,5 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .ressel.flat{border:0}
 .adjform{grid-template-columns:minmax(0,1fr)}
 .adjform>*{min-width:0}
+/* Crea lega: il menu della giornata di inizio con lo stesso carattere degli altri campi */
+.card.form .selwrap select{font-family:inherit;font-weight:500;font-size:16px}
