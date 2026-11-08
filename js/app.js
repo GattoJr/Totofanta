@@ -711,6 +711,9 @@ const ACT={
     safe(async()=>{await B.setNicknameIn(lid,nick);S.prof.nicks[lid]=nick;delete S.prof.edit[lid];toast("Nickname aggiornato")})},
   profPw:()=>{const f=S.prof;if((f.pw||"").length<6)return toast("La password deve avere almeno 6 caratteri");if(f.pw!==f.pw2)return toast("Le due password non coincidono");
     safe(async()=>{await Online.updatePw(f.pw);f.pw=f.pw2="";toast("Password aggiornata")})},
+  /* elimina account (8/11): il campo ELIMINA compare solo dopo aver toccato il pulsante */
+  profDelAsk:()=>{if(!S.prof)return;S.prof.delAsk=true;S.prof.del="";render();setTimeout(()=>document.getElementById("pd-1")?.focus(),0)},
+  profDelNo:()=>{if(!S.prof)return;S.prof.delAsk=false;S.prof.del="";render()},
   profDel:()=>{if((S.prof.del||"").trim().toUpperCase()!=="ELIMINA")return toast("Scrivi ELIMINA per confermare");
     safe(async()=>{
       /* admin di leghe con altri iscritti: prima il nuovo admin (finestra), poi l'eliminazione */
@@ -1295,8 +1298,10 @@ function vProfile(){
    <button class="btn sm" data-act="profPw" style="align-self:flex-start" ${S.busy?"disabled":""}>Salva password</button></section>`;
   const adm=mine.filter(L=>L.adminId===S.uid);
   html+=`<section class="card danger-zone"><h3>Elimina account</h3><p class="small" style="font-family:var(--f-ui)">Cancella per sempre il tuo account, le tue iscrizioni e i tuoi pronostici.${adm.length?` Per le leghe di cui sei admin (<b>${adm.map(L=>esc(L.name)).join(", ")}</b>) ti chiederemo di nominare un nuovo admin; quelle in cui sei l'unico iscritto verranno eliminate.`:""} Non si può annullare.</p>
-   <input type="text" id="pd-1" data-bind="prof.del" value="${esc(P.del)}" placeholder="Scrivi ELIMINA per confermare" autocomplete="off" autocapitalize="characters">
-   <button class="btn sm danger" data-act="profDel" style="align-self:flex-start" ${S.busy?"disabled":""}>Elimina il mio account</button></section>`;
+   ${P.delAsk?`<label class="small" for="pd-1" style="font-family:var(--f-ui)">Per confermare scrivi <b>ELIMINA</b></label>
+   <input type="text" id="pd-1" data-bind="prof.del" value="${esc(P.del)}" placeholder="ELIMINA" autocomplete="off" autocapitalize="characters">
+   <div class="row" style="gap:8px"><button class="btn sm danger" data-act="profDel" ${S.busy?"disabled":""}>Conferma eliminazione</button><button class="btn sm ghost" data-act="profDelNo">Annulla</button></div>`
+   :`<button class="btn sm danger" data-act="profDelAsk" style="align-self:flex-start">Elimina il mio account</button>`}</section>`;
   return html;
 }
 
