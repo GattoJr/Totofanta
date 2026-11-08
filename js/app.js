@@ -1137,12 +1137,16 @@ function vResults(L){
   const r=list.find(x=>x.n===S.resN)||list[0];needRound(r.n);
   const st=r2=>roundDone(r2)?"Conclusa":"In corso";
   html+=`<div class="ressel"><label for="res-n">Giornata</label><div class="selwrap"><select id="res-n">${list.map(x=>`<option value="${x.n}"${x.n===r.n?" selected":""}>${x.n}ª giornata · ${st(x)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div>`;
-  /* giocatori in ordine di punti della giornata (pari punti: miglior quota, poi nome) */
+  /* punti e posizione della giornata (pari punti: miglior quota, poi nome), per la riga Totale */
   const pl=approved().map(m=>({m,pk:pickDoc(r._id,m._id)?.picks||{},...roundScore(r,m._id)})).sort((a,b)=>(b.pts-a.pts)||(b.best-a.best)||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
   pl.forEach((d,i)=>{const p=pl[i-1];d.pos=(p&&p.pts===d.pts&&p.best===d.best)?p.pos:i+1});
   const me=pl.find(d=>d.m._id===S.uid);
   /* la propria colonna per prima (sul telefono è sempre visibile), poi gli altri in ordine di punti */
-  const cols=me?[me,...pl.filter(d=>d!==me)]:pl;
+  /* colonne (8/11): la mia per prima, poi gli altri in ordine di classifica generale (stessa classifica e spareggi
+     della scheda Classifica); la riga Totale resta con punti e posizione della giornata */
+  const gen=computeStandings(L,S.members,S.rounds,S.picks);const gpos={};gen.forEach((g,i)=>{gpos[g.uid]=i});
+  const byGen=pl.slice().sort((a,b)=>((gpos[a.m._id]??1e9)-(gpos[b.m._id]??1e9))||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
+  const cols=me?[me,...byGen.filter(d=>d!==me)]:byGen;
 
   const head=cols.map(d=>`<th class="pc${d.m._id===S.uid?" me":""}" title="${esc(d.m.nick)}"><span class="pnm">${d===me?"Tu":esc(d.m.nick)}</span></th>`).join("");
   const rows=r.matches.map(m=>{const e=esito(m);const started=matchLocked(r,m);
