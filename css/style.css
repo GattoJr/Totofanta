@@ -662,3 +662,45 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .mpcard .sbest .small{font-size:14px;color:var(--ink)}
 .mpcard .mpnick{font-weight:700}
 .mpcard .mpnick.me{color:var(--blue-text)}
+/* ===== Allineamenti e simmetrie (8/11): una regola per ogni tipo di elemento ===== */
+/* pulsanti principali: larghi quanto il riquadro, alti quanto un campo */
+.btn.wide,.btn.block{align-self:stretch;width:100%;min-width:0}
+.btn:not(.sm):not(.ghost){min-height:46px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+/* due pulsanti affiancati della stessa larghezza (conferme) */
+.btns2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btns2 .btn{width:100%}
+/* campo + pulsante: sempre affiancati e della stessa altezza */
+.fieldbtn{display:flex;gap:8px;align-items:stretch}
+.fieldbtn input{flex:1;min-width:0;width:auto}
+.fieldbtn .btn{flex:none;min-width:96px;min-height:0}
+.adjform{grid-template-columns:1fr}
+.adjform select,.adjform #adj-why,.adjform .fieldbtn{grid-column:1/-1}
+/* etichette dei campi: piccole, senza due punti */
+.flabel{display:flex;align-items:center;gap:8px;font-family:var(--f-ui);font-size:13px;font-weight:600;color:var(--muted);margin:0}
+.flabel .help{margin-left:auto;width:22px;height:22px;font-size:12px}
+.fld{display:flex;flex-direction:column;gap:6px}
+.card.form{gap:16px}
+.nickrow .flabel{color:var(--ink)}
+/* scelta a due (Privata / Pubblica), come la scelta del tema */
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.segopt{position:relative;cursor:pointer}
+.segopt input{position:absolute;opacity:0;pointer-events:none}
+.segopt span{display:flex;align-items:center;justify-content:center;min-height:46px;border-radius:12px;border:1.5px solid var(--line);background:var(--field);font-family:var(--f-ui);font-weight:700;font-size:15px}
+.segopt input:checked+span{border-color:var(--blue);background:var(--blue-soft);color:var(--blue-text)}
+.segopt input:focus-visible+span{outline:2px solid var(--blue);outline-offset:2px}
+/* nome della lega: stesso stile ovunque; dove non è un collegamento non ha la freccia */
+.ltitle.static{cursor:default;padding:2px 2px 0}
+.ltitle.static .ltn{margin:0}
+.lchip{align-self:flex-start;margin-top:-8px}
+/* stato della giornata nella card blu: stesso chip dei Pronostici, pieno per leggersi sul blu */
+.hero .chip{background:#fff;color:var(--hero-ink,#1d3a8a)}
+.hero .chip.ok{background:#E3F6EA;color:#17733D}
+.hero .chip.blue{background:#E6EDFF;color:#2F64F2}
+.hero .chip.warn{background:#FFF1D6;color:#8A5600}
+/* tabelle dentro un riquadro: nessuna seconda cornice */
+.card .tbl{border:0;border-radius:0;background:none}
+/* selettore a sé stante (Risultati, Calendario, Statistiche) */
+.ressel{border:1px solid var(--line)}
+.ressel.flat{border:0}
+.adjform{grid-template-columns:minmax(0,1fr)}
+.adjform>*{min-width:0}

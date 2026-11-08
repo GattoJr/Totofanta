@@ -586,7 +586,7 @@ function roundStatus(r,L){
   if(roundDone(r))return{t:"Conclusa",c:"ok"};
   if(r.matches.some(m=>esito(m)))return{t:"In corso",c:"blue"};
   if(!roundVisible(r))return r.matches.every(m=>matchLocked(r,m))?{t:"Non giocata",c:""}:{t:"Quote in arrivo",c:"warn"};
-  if(roundLocked(r))return{t:"Chiusa",c:""};
+  if(roundLocked(r))return{t:"In corso",c:"blue"};
   return{t:"Aperta",c:"ok"};
 }
 /* calendario */
@@ -868,7 +868,8 @@ function render(){
   const needLogin=ONLINE&&S.authReady&&!S.uid;
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
   if(ADMIN_PAGE)return renderAdminPage(needLogin);
-  const title=S.screen==="create"?"Crea una lega":S.screen==="calendario"?"Calendario":S.screen==="profilo"?"Profilo":S.screen==="statistiche"?"Statistiche":S.screen==="impostazioni"?"Impostazioni":"TotoFanta";
+  /* intestazione (8/11): logo solo in Home (con Pronostici) e nelle schede Classifica e Risultati; nelle altre pagine il loro nome */
+  const title=bareTitle()||({create:"Crea una lega",calendario:"Calendario",profilo:"Profilo",statistiche:"Statistiche",impostazioni:"Impostazioni",leghe:"Le mie leghe",lega:"Lega",admin:"Pannello admin"}[S.screen])||"TotoFanta";
   const bare=needLogin||recovery||S.boot||!S.authReady;
   const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",impostazioni:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
   const leftBtn=bare?"<span></span>":(backTo?`<button class="iconbtn" data-act="go" data-s="${backTo}" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
@@ -900,6 +901,7 @@ function placeNextBar(){const bar=document.getElementById("next-bar");if(!bar)re
   if(S.nextScroll&&S.nextScroll.k===key)bar.scrollLeft=S.nextScroll.x;
   else{const first=bar.querySelector(".mini:not(.done)");bar.scrollLeft=first?first.offsetLeft-bar.offsetLeft-2:bar.scrollWidth}
   bar.addEventListener("scroll",()=>{S.nextScroll={k:key,x:bar.scrollLeft}},{passive:true})}
+function bareTitle(){return ONLINE&&S.authReady&&!S.uid?"TotoFanta":""}
 function renderAdminPage(needLogin){
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
@@ -989,22 +991,22 @@ function vJoin(){
   return `<div class="scrim" data-act="closeAll"></div><form class="card modal" role="dialog" aria-modal="true" aria-labelledby="jt" data-submit="join" novalidate>
   <button type="button" class="mclose" data-act="closeAll" aria-label="Chiudi">${I.close}</button>
   <h2 id="jt">Unisciti alla lega</h2>
-  <label class="small" for="jf-name" style="font-family:var(--f-ui)">Nome lega</label>
-  <input type="text" id="jf-name" data-bind="form.name" data-rerender value="${esc(f.name)}" placeholder="Nome lega" autocomplete="off">
+  <label class="flabel" for="jf-name">Nome della lega</label>
+  <input type="text" id="jf-name" data-bind="form.name" data-rerender value="${esc(f.name)}" placeholder="Es. Lega del Bar Sport" autocomplete="off">
   ${missing?`<p class="err">Nessuna lega con questo nome: forse è stata rinominata o eliminata.</p>`:""}
   ${sameName&&f.closed&&!missing?`<p class="err">La lega è già iniziata: le iscrizioni sono chiuse.</p>`:""}
   ${isPublic?`<p class="small muted" style="font-family:var(--f-ui)">Lega pubblica: non serve la password.</p>`
-    :`<label class="small" for="jf-pw" style="font-family:var(--f-ui)">Password lega</label><input type="password" id="jf-pw" data-bind="form.pw" value="${esc(f.pw)}" placeholder="${f.fromLink?"Password lega":"Password lega (solo leghe private)"}" autocomplete="off">`}
-  <label class="small" for="jf-nick" style="font-family:var(--f-ui)">Il tuo nickname</label>
-  <input type="text" id="jf-nick" data-bind="form.nick" value="${esc(f.nick)}" placeholder="Come ti vedranno gli altri" maxlength="20">
+    :`<label class="flabel" for="jf-pw">Password della lega${f.fromLink?"":" · solo leghe private"}</label><input type="password" id="jf-pw" data-bind="form.pw" value="${esc(f.pw)}" autocomplete="off">`}
+  <label class="flabel" for="jf-nick">Il tuo nickname · come ti vedranno gli altri</label>
+  <input type="text" id="jf-nick" data-bind="form.nick" value="${esc(f.nick)}" placeholder="Es. Vale" maxlength="20">
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
-  <button class="btn block" type="submit" ${S.busy||(sameName&&f.closed)?"disabled":""}>${S.busy?"Attendi…":"Unisciti"}</button></form>`;
+  <button class="btn wide" type="submit" ${S.busy||(sameName&&f.closed)?"disabled":""}>${S.busy?"Attendi…":"Unisciti"}</button></form>`;
 }
 /* finestra: nuovo admin per ogni lega che si lascerebbe senza admin */
 function vXfer(){const X=S.xfer;
   return `<div class="scrim" data-act="closeAll"></div><div class="card modal" role="dialog" aria-modal="true" aria-labelledby="xft"><h2 id="xft">Nomina un nuovo admin</h2>
   <p class="small" style="font-family:var(--f-ui)">Sei admin di ${X.leagues.length===1?"una lega":"alcune leghe"} con altri iscritti. Prima di eliminare l'account scegli chi prende il tuo posto: diventerà admin e tu non lo sarai più.</p>
-  ${X.leagues.map(x=>`<label class="small" for="xf-${x.lid}" style="font-family:var(--f-ui)"><b>${esc(x.name)}</b></label><select id="xf-${x.lid}" data-xfer="${x.lid}"><option value="">Scegli il nuovo admin</option>${x.members.map(m=>`<option value="${m.mid}"${X.pick[x.lid]===m.mid?" selected":""}>${esc(m.nick)}</option>`).join("")}</select>`).join("")}
+  ${X.leagues.map(x=>`<label class="flabel" for="xf-${x.lid}">${esc(x.name)}</label><select id="xf-${x.lid}" data-xfer="${x.lid}"><option value="">Scegli il nuovo admin</option>${x.members.map(m=>`<option value="${m.mid}"${X.pick[x.lid]===m.mid?" selected":""}>${esc(m.nick)}</option>`).join("")}</select>`).join("")}
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
   <button class="btn block danger" data-act="xferOk" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Nomina ed elimina l'account"}</button><button class="btn ghost" data-act="closeAll">Annulla</button></div>`}
 /* admin che abbandona la lega: sceglie il nuovo admin, poi esce */
@@ -1015,7 +1017,7 @@ function vXferLeave(){const L=league();const X=S.xferLeave;const others=approved
    <button class="btn block sec" data-act="closeAll">Ho capito</button></div>`;
   return `<div class="scrim" data-act="closeAll"></div><div class="card modal" role="dialog" aria-modal="true" aria-labelledby="xlt">${close}<h2 id="xlt">Abbandona lega</h2>
   <p class="small" style="font-family:var(--f-ui)">Sei l'admin di “${esc(L.name)}”. Per uscire scegli chi prende il tuo posto: diventerà admin e tu lascerai la lega. Le tue schedine verranno eliminate e sparirai dalla classifica${calRoundStarted(L.startRound)?"; la lega è già iniziata, quindi non potrai rientrare":""}.</p>
-  <label class="small" for="xl-sel" style="font-family:var(--f-ui)"><b>Nuovo admin</b></label><select id="xl-sel" data-xleave="1"><option value="">Scegli il nuovo admin</option>${others.map(m=>`<option value="${m.mid||m._id}"${X.pick===(m.mid||m._id)?" selected":""}>${esc(m.nick)}</option>`).join("")}</select>
+  <label class="flabel" for="xl-sel">Nuovo admin</label><select id="xl-sel" data-xleave="1"><option value="">Scegli il nuovo admin</option>${others.map(m=>`<option value="${m.mid||m._id}"${X.pick===(m.mid||m._id)?" selected":""}>${esc(m.nick)}</option>`).join("")}</select>
   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
   <button class="btn block danger" data-act="xferLeaveOk" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Cedi il ruolo e abbandona"}</button><button class="btn ghost" data-act="closeAll">Annulla</button></div>`}
 function logoHtml(L){return `<div class="logo">${L.logo?`<img src="${esc(L.logo)}" alt="">`:esc((L.name||"?").trim()[0]?.toUpperCase())}</div>`}
@@ -1028,10 +1030,12 @@ function vNoLeague(){
 }
 function vMyLeagues(){
   const mine=myLeagues();
-  return `<div class="phdr"><h2 class="pagetitle">Le mie leghe</h2><span class="small muted">${mine.length} ${mine.length===1?"lega":"leghe"}</span></div><section class="card">${mine.length?`<div class="list">${mine.map(L=>`<button class="litem${L._id===S.lid?" cur":""}" data-act="pickLeague" data-lid="${L._id}">${logoHtml(L)}<div class="grow"><h3>${esc(L.name)}</h3><div class="small muted">${L.type==="private"?"Privata":"Pubblica"} · Quote · dalla ${L.startRound}ª giornata</div></div>${L.adminId===S.uid?`<span class="chip blue">Admin</span>`:""}</button>`).join("")}</div>`:`<div class="empty">Nessuna lega per ora.</div>`}
-  <button class="btn wide" data-act="newLeague">Crea una lega</button><button class="btn wide sec" data-act="joinModal">Unisciti a una lega</button></section>`;
+  return `<section class="card">${mine.length?`<div class="list">${mine.map(L=>`<button class="litem${L._id===S.lid?" cur":""}" data-act="pickLeague" data-lid="${L._id}">${logoHtml(L)}<div class="grow"><h3>${esc(L.name)}</h3><div class="small muted">${L.type==="private"?"Privata":"Pubblica"} · Quote · dalla ${L.startRound}ª giornata</div></div>${L.adminId===S.uid?`<span class="chip blue">Admin</span>`:""}</button>`).join("")}</div>`:`<div class="empty">Nessuna lega per ora.</div>`}
+  <button class="btn wide" data-act="newLeague">Crea una lega</button><button class="btn wide" data-act="joinModal">Unisciti a una lega</button></section>`;
 }
 
+/* nome della lega (8/11): stesso stile in Home, Classifica, Risultati, Lega e Pannello admin; dove si è già nella pagina della lega non è un collegamento */
+function leagueName(L,extra){return `<div class="ltitle static"><h2 class="ltn${L.name.length>16?" long":""}">${esc(L.name)}</h2></div>${extra||""}`}
 function leagueTitle(){const L=league();if(!L)return "";
   return `<button type="button" class="ltitle" data-act="go" data-s="lega" aria-label="Apri la pagina della lega ${esc(L.name)}"><span class="ltn${L.name.length>16?" long":""}">${esc(L.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>`}
 function vLeagueScreen(L){
@@ -1065,21 +1069,22 @@ function vHome(L){
     const upcoming=r.matches.filter(m=>!esito(m));const kt=m=>{const t=Date.parse(m.kickoff||m.day||"");return isNaN(t)?Infinity:t};
     const show=[...r.matches].sort((a,b)=>kt(a)-kt(b)||a.id-b.id);
     html+=`<div class="nextwrap"><div class="nexthead"><span class="disp">${!upcoming.length?"Risultati":upcoming.length<r.matches.length?"Incontri":"Prossimi incontri"}</span><span class="small muted">${r.n}ª giornata</span></div>
-    <div class="next" id="next-bar" data-round="${r.n}">${show.map(m=>`<div class="mini${esito(m)?" done":m.kickoff&&+new Date(m.kickoff)<=Date.now()?" live":""}"><div class="teams">${crest(m.home)}<span>${abbr(m.home)} - ${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:(m.kickoff&&+new Date(m.kickoff)<=Date.now()?`<span>${fmtDay(m.kickoff)}</span><span class="live">In corso</span>`:m.kickoff?`<span>${fmtDay(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`:`<span>${m.day?fmtDay(m.day):"—"}</span><span>da definire</span>`)}</div></div>`).join("")}</div></div>`;
+    <div class="next" id="next-bar" data-round="${r.n}">${show.map(m=>`<div class="mini${esito(m)?" done":m.kickoff&&+new Date(m.kickoff)<=Date.now()?" live":""}"><div class="teams">${crest(m.home)}<span>${abbr(m.home)}–${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:(m.kickoff&&+new Date(m.kickoff)<=Date.now()?`<span>${fmtDow(m.kickoff)}</span><span class="live">In corso</span>`:m.kickoff?`<span>${fmtDow(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`:`<span>${m.day?fmtDow(m.day):"—"}</span><span>da definire</span>`)}</div></div>`).join("")}</div></div>`;
   }
   return html;
 }
 /* card blu della Home (proposta A): giornata e stato, pulsante, "Hai ancora" e timer */
-function heroTop(label,chip){return `<div class="hero-top"><span class="eyebrow">${label}</span>${chip?`<span class="hchip">${chip}</span>`:""}</div>`}
+/* stato della giornata (8/11): stesso chip dei Pronostici */
+function heroTop(label,st){return `<div class="hero-top"><span class="eyebrow">${label}</span>${st?`<span class="chip ${st.c}">${st.t}</span>`:""}</div>`}
 function statusCard(L,r){
   if(!r)return heroTop(`Dalla ${L.startRound}ª giornata`)+`<p class="hero-title">La competizione non è ancora iniziata</p><button class="btn hbtn" data-act="go" data-s="lega">Invita alla tua lega</button>`;
   if(!roundVisible(r)){const k=firstKick(r);const first=S.rounds[0]===r&&!S.rounds.some(x=>x.matches.some(m=>esito(m)));
-    return heroTop(`${r.n}ª giornata`,"Quote in arrivo")+`<p class="hero-title">${first?"La competizione non è ancora iniziata":"Le quote arrivano prima della giornata"}</p><button class="btn hbtn" data-act="go" data-s="lega">Invita alla tua lega</button>${k?`<p class="hero-sub">Si gioca da ${fmtDow(k)}</p>`:""}`}
+    return heroTop(`${r.n}ª giornata`,{t:"Quote in arrivo",c:"warn"})+`<p class="hero-title">${first?"La competizione non è ancora iniziata":"Le quote arrivano prima della giornata"}</p><button class="btn hbtn" data-act="go" data-s="lega">Invita alla tua lega</button>${k?`<p class="hero-sub">Si gioca da ${fmtDow(k)}</p>`:""}`}
   if(roundLocked(r)){
-    if(roundDone(r))return heroTop(`${r.n}ª giornata`,"Conclusa")+`<p class="hero-title">Hai fatto ${f2(roundScore(r,S.uid).pts)} punti</p><button class="btn hbtn" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
-    return heroTop(`${r.n}ª giornata`,"In corso")+`<button class="btn hbtn" data-act="go" data-s="pronostici">Segui i tuoi pronostici</button>`}
+    if(roundDone(r))return heroTop(`${r.n}ª giornata`,{t:"Conclusa",c:"ok"})+`<p class="hero-title">Hai fatto ${f2(roundScore(r,S.uid).pts)} punti</p><button class="btn hbtn" data-act="go" data-s="pronostici">Vedi la giornata</button>`;
+    return heroTop(`${r.n}ª giornata`,{t:"In corso",c:"blue"})+`<button class="btn hbtn" data-act="go" data-s="pronostici">Segui i tuoi pronostici</button>`}
   const pk=pickDoc(r._id,S.uid)?.picks||{};const complete=r.matches.every(m=>pk[m.id]);
-  return heroTop(`${r.n}ª giornata`,"Aperta")+`<button class="btn hbtn" data-act="go" data-s="pronostici">${complete?"Modifica":"Inserisci"} i tuoi pronostici</button>${kickTimer(r)}`;
+  return heroTop(`${r.n}ª giornata`,{t:"Aperta",c:"ok"})+`<button class="btn hbtn" data-act="go" data-s="pronostici">${complete?"Modifica":"Inserisci"} i tuoi pronostici</button>${kickTimer(r)}`;
 }
 
 /* timer fino al fischio d'inizio della prima partita della giornata (chiusura dei pronostici) */
@@ -1112,10 +1117,10 @@ function vPicks(L){
       return `<button class="${cls}" ${locked?"disabled":""} data-act="pick" data-r="${r._id}" data-m="${m.id}" data-p="${k}" aria-pressed="${sel}" aria-label="${esc(m.home)}–${esc(m.away)}: ${k}, quota ${o?o.toFixed(2):"non disponibile"}"><span class="s">${k}</span><span class="o">${o?o.toFixed(2):"—"}</span></button>`};
     const dot=t=>{const c=COLORS[t]||["#888","#444"];return `<span class="tdot" style="background:${c[0]};border-color:${c[1]}" aria-hidden="true"></span>`};
     const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(started?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
-    return `<section class="card match"><div class="mrow"><div class="minfo"><span class="mdate">${fmtDow(m.kickoff).toUpperCase()} · ${fmtTime(m.kickoff)}</span><span class="mteam">${dot(m.home)}<span>${esc(m.home)}</span>${e?`<b class="mgoal">${m.hg}</b>`:""}</span><span class="mteam">${dot(m.away)}<span>${esc(m.away)}</span>${e?`<b class="mgoal">${m.ag}</b>`:""}</span></div>${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
+    return `<section class="card match"><div class="mrow"><div class="minfo"><span class="mdate">${fmtDow(m.kickoff)} · ${fmtTime(m.kickoff)}</span><span class="mteam">${dot(m.home)}<span>${esc(m.home)}</span>${e?`<b class="mgoal">${m.hg}</b>`:""}</span><span class="mteam">${dot(m.away)}<span>${esc(m.away)}</span>${e?`<b class="mgoal">${m.ag}</b>`:""}</span></div>${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary${roundLocked(r)?"":" two"}"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div>${roundLocked(r)?`<div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div>`:`<div><b>${f2(potential)}</b><span>Punteggio massimo</span></div>`}</div>
-  <p class="center small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
+  <p class="small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
   if(anyOpen)html+=`<div class="savebar"><span class="small">${dirty?"Modifiche da salvare":"Nessuna modifica da salvare"}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":"Salva"}</button></div>`;
   return html;
 }
@@ -1134,7 +1139,7 @@ function vOthers(r){
    I punti si ricalcolano a ogni risultato scritto nel database (evento in tempo reale su fixtures). */
 function vResults(L){
   const list=S.rounds.filter(r=>roundVisible(r)&&roundLocked(r)).sort((a,b)=>b.n-a.n);
-  let html=`<div class="phdr"><h2 class="pagetitle">Risultati</h2></div>`;
+  let html=leagueTitle();
   if(!list.length){const nx=S.rounds.find(r=>roundVisible(r)&&!roundLocked(r));const fk=nx&&firstKick(nx);
     return html+`<section class="card"><p class="cta-title">Ancora nessuna giornata giocata</p><p class="center small muted" style="font-family:var(--f-ui)">${fk?`I pronostici di tutti saranno visibili dal fischio d'inizio della ${nx.n}ª giornata, ${fmtDow(fk)} alle ${fmtTime(fk)}.`:"I pronostici di tutti si vedono dal fischio d'inizio della prima partita di ogni giornata."}</p></section>`}
   const r=list.find(x=>x.n===S.resN)||list[0];needRound(r.n);
@@ -1153,7 +1158,7 @@ function vResults(L){
 
   const head=cols.map(d=>`<th class="pc${d.m._id===S.uid?" me":""}" title="${esc(d.m.nick)}"><span class="pnm">${d===me?"Tu":esc(d.m.nick)}</span></th>`).join("");
   const rows=r.matches.map(m=>{const e=esito(m);const started=matchLocked(r,m);
-    const state=e?`<b>${m.hg}-${m.ag}</b> · ${e} ${oddOf(m,e)?oddOf(m,e).toFixed(2):""}`:started?`<span class="live">In corso</span>`:`${m.kickoff?fmtDow(m.kickoff)+" "+fmtTime(m.kickoff):"da giocare"}`;
+    const state=e?`<b>${m.hg}-${m.ag}</b> · ${e} ${oddOf(m,e)?oddOf(m,e).toFixed(2):""}`:started?`<span class="live">In corso</span>`:`${m.kickoff?fmtDow(m.kickoff)+" · "+fmtTime(m.kickoff):"da giocare"}`;
     return `<tr><th class="mt" scope="row"><span class="mtt">${esc(abbr(m.home))}–${esc(abbr(m.away))}</span><span class="mts">${state}</span></th>${cols.map(d=>{const p=d.pk[m.id];
       const cls=!p?"none":!e?"wait":p===e?"won":"lost";
       const q=oddOf(m,p);const inner=!p?"–":`<b>${p}</b>${q?`<i>${p===e?"+":""}${q.toFixed(2)}</i>`:""}`;
@@ -1176,7 +1181,7 @@ function statsOf(list){
     const favQ=Math.min(o.o1,o.oX,o.o2);const g=q===favQ?st.fav:st.out;g.n++;
     const r=st.rounds[f.n]=st.rounds[f.n]||{n:0,ok:0,pts:0};r.n++;st.lr.add(L.lid+"|"+f.n);
     if(ok){st.ok++;st.pts+=c;st.sumQok+=q;st.signs[p]&&st.signs[p].ok++;g.ok++;r.ok++;r.pts+=c;
-      if(!st.best||q>st.best.q)st.best={q,n:f.n,match:`${f.home}–${f.away}`,p}}
+      if(!st.best||q>st.best.q)st.best={q,n:f.n,match:`${abbr(f.home)}–${abbr(f.away)}`,p}}
   }
   return st;
 }
@@ -1200,9 +1205,9 @@ function vStats(){
       ${row("Favorita",st.fav)}${row("Sorpresa",st.out)}</tbody></table></div>
      <p class="small muted" style="font-family:var(--f-ui)">Favorita: il risultato con la quota più bassa della partita; sorpresa: uno degli altri due.</p>`};
   const L=X.data.find(x=>x.lid===X.lid)||X.data[0];const one=statsOf([L]);
-  html+=`<section class="card"><div class="ressel flat"><label for="st-l">Lega</label><div class="selwrap"><select id="st-l">${X.data.map(x=>`<option value="${x.lid}"${x.lid===L.lid?" selected":""}>${esc(x.name)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div>
-   ${block(one)}${roundChart(one)}</section>`;
-  html+=`<p class="small muted center" style="font-family:var(--f-ui)">Contano solo le partite finite su cui hai fatto un pronostico; bonus e penalità dell'admin sono esclusi.</p>`;
+  html+=`<div class="ressel"><label for="st-l">Lega</label><div class="selwrap"><select id="st-l">${X.data.map(x=>`<option value="${x.lid}"${x.lid===L.lid?" selected":""}>${esc(x.name)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div>
+   <section class="card">${block(one)}${roundChart(one)}</section>`;
+  html+=`<p class="small muted" style="font-family:var(--f-ui)">Contano solo le partite finite su cui hai fatto un pronostico; bonus e penalità dell'admin sono esclusi.</p>`;
   return html;
 }
 /* punti per giornata della lega scelta: barre semplici, valore al passaggio del dito o del mouse */
@@ -1235,7 +1240,7 @@ function vStandings(L){
   const rows=computeStandings(L,S.members,S.rounds,S.picks);
   const scored=S.rounds.filter(r=>r.matches.some(m=>esito(m)));
   /* intestazione blu: nome della lega in grande (podio e classifiche di giornata tolti il 7/11) */
-  let html=`<section class="rkhero"><span class="eyebrow">Classifica</span><h2 class="disp rkname${L.name.length>16?" long":""}">${esc(L.name)}</h2></section>`;
+  let html=leagueTitle();
   const v=(x)=>x?f2(x):"–";
   {
     html+=`<section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mq" title="Miglior quota: la quota più alta indovinata con un singolo pronostico" aria-label="MQ: spiegazione">MQ</button></th></tr></thead><tbody>
@@ -1256,22 +1261,22 @@ function vStandings(L){
 /* ---- Lega: regolamento, invito, partecipanti ---- */
 function vInfo(L){
   const admin=isAdmin();const pend=S.members.filter(m=>m.status==="pending");const pw=S.leaguePw[L._id];
-  return `<section class="lhero">${logoHtml(L)}<div class="grow"><h2 class="disp">${esc(L.name)}</h2>${admin?`<span class="chip blue">Sei admin di questa lega</span>`:""}</div></section>
+  return `${leagueName(L,admin?`<span class="chip blue lchip">Sei admin di questa lega</span>`:"")}
   ${admin?`<button class="btn wide adminbtn" data-act="go" data-s="admin">${I.cog}Pannello admin</button>`:""}
   ${admin&&pend.length?`<section class="card"><h3>Richieste di accesso</h3><div class="list">${pend.map(m=>`<div class="row"><span class="grow"><b>${esc(m.nick)}</b></span><button class="btn sm" data-act="approve" data-u="${m._id}">Approva</button><button class="btn sm sec" data-act="reject" data-u="${m._id}">Rifiuta</button></div>`).join("")}</div></section>`:""}
 
   <section class="card"><h3>Invita alla tua lega</h3><table class="kv"><tbody>
    <tr><td>Nome</td><td><b>${esc(L.name)}</b></td></tr>
    ${L.type==="private"?`<tr><td>Password</td><td>${pw?`<b class="code">${esc(pw)}</b>`:`<span class="muted">non disponibile${admin?": impostala dal Pannello admin":""}</span>`}</td></tr>`:""}
-   </tbody></table><button class="btn sm" data-act="copyLink" style="align-self:flex-start">Copia link</button></section>
+   </tbody></table><button class="btn wide" data-act="copyLink">Copia link</button></section>
   <section class="card"><h3>Regolamento lega</h3><table class="kv"><tbody>
    <tr><td>Privacy</td><td>${L.type==="private"?"Lega Privata":"Lega Pubblica"}</td></tr>
    <tr><td>Modalità</td><td>Quote</td></tr>
    <tr><td>Criteri spareggio</td><td>1. Miglior punteggio di giornata (MP)<br>2. Miglior quota (MQ)</td></tr>
    <tr><td>Durata</td><td>Dalla ${L.startRound}ª alla 38ª giornata</td></tr>
    <tr><td>Inserimento pronostici</td><td>Fino al fischio d'inizio della giornata</td></tr></tbody></table></section>
-  <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ghost" data-act="removeMember" data-u="${m._id}">Rimuovi</button>`:""}</div>${admin&&S.confirm==="rm-"+m._id?`<div class="confirmrow"><p class="small" style="font-family:var(--f-ui)">Rimuovere <b>${esc(m.nick)}</b> dalla lega? Verranno eliminate anche le sue schedine e uscirà dalla classifica. Non si può annullare.</p><div class="row"><button class="btn sm danger" data-act="removeMemberOk" data-u="${m._id}">Rimuovi</button><button class="btn sm sec" data-act="removeMemberNo">Annulla</button></div></div>`:""}`).join("")}</div></section>
-  ${S.confirm==="leave"&&!admin?`<section class="card"><h3>Abbandonare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Uscirai dalla lega: verranno eliminate le tue schedine e sparirai dalla classifica. Non si può annullare${calRoundStarted(L.startRound)?", e non potrai rientrare perché la lega è già iniziata":""}.</p><div class="row"><button class="btn danger" data-act="leaveOk">Abbandona</button><button class="btn sec" data-act="leaveNo">Annulla</button></div></section>`
+  <section class="card"><h3>Partecipanti (${approved().length})</h3><div class="list">${[...S.members].sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0)).filter(m=>m.status==="approved").map(m=>`<div class="row"><span class="grow">${esc(m.nick)}${m._id===L.adminId?` <span class="chip blue">Admin</span>`:""}${m._id===S.uid?` <span class="chip">tu</span>`:""}</span>${admin&&m._id!==L.adminId?`<button class="btn sm ghost" data-act="removeMember" data-u="${m._id}">Rimuovi</button>`:""}</div>${admin&&S.confirm==="rm-"+m._id?`<div class="confirmrow"><p class="small" style="font-family:var(--f-ui)">Rimuovere <b>${esc(m.nick)}</b> dalla lega? Verranno eliminate anche le sue schedine e uscirà dalla classifica. Non si può annullare.</p><div class="btns2"><button class="btn sm danger" data-act="removeMemberOk" data-u="${m._id}">Rimuovi</button><button class="btn sm sec" data-act="removeMemberNo">Annulla</button></div></div>`:""}`).join("")}</div></section>
+  ${S.confirm==="leave"&&!admin?`<section class="card"><h3>Abbandonare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Uscirai dalla lega: verranno eliminate le tue schedine e sparirai dalla classifica. Non si può annullare${calRoundStarted(L.startRound)?", e non potrai rientrare perché la lega è già iniziata":""}.</p><div class="btns2"><button class="btn danger" data-act="leaveOk">Abbandona</button><button class="btn sec" data-act="leaveNo">Annulla</button></div></section>`
    :`<section class="card"><button class="btn wide sec leavebtn" data-act="leaveAsk">Abbandona lega</button></section>`}`;
 }
 /* bonus e penalità sotto la classifica generale: trasparenza per tutti */
@@ -1289,29 +1294,29 @@ function vProfile(){
   <section class="card"><h3>Account</h3><table class="kv"><tbody>
    <tr><td>Email</td><td>${ONLINE?esc(S.email):"Modalità prova"}</td></tr>
    ${ONLINE?`<tr><td>Accesso</td><td>${google&&emailPw?"Google ed email":google?"Google":"Email e password"}</td></tr>`:""}</tbody></table>
-   ${ONLINE?`<button class="btn sec" data-act="logout" style="align-self:flex-start">Logout</button>`:""}</section>`;
+   ${ONLINE?`<button class="btn wide sec" data-act="logout">Logout</button>`:""}</section>`;
   html+=`<section class="card"><h3>I tuoi nickname</h3><p class="small muted" style="font-family:var(--f-ui)">Ogni lega ha il suo nickname: è il nome con cui ti vedono gli altri.</p>
-   ${!mine.length?`<p class="small muted">Non sei ancora in nessuna lega.</p>`:!P.nicks?`<p class="small muted">Caricamento…</p>`:`<div class="list">${mine.map(L=>`<div class="nickrow"><span class="lg">${esc(L.name)}</span><div class="row"><input type="text" class="grow" id="pn-${L._id}" data-bind="prof.edit.${L._id}" value="${esc(P.edit[L._id]??P.nicks[L._id]??"")}" maxlength="20" autocomplete="off" aria-label="Nickname in ${esc(L.name)}"><button class="btn sm" type="button" data-act="profNick" data-lid="${L._id}" ${S.busy?"disabled":""}>Salva</button></div></div>`).join("")}</div>`}</section>`;
+   ${!mine.length?`<p class="small muted">Non sei ancora in nessuna lega.</p>`:!P.nicks?`<p class="small muted">Caricamento…</p>`:`<div class="list">${mine.map(L=>`<div class="nickrow"><label class="flabel" for="pn-${L._id}">${esc(L.name)}</label><div class="fieldbtn"><input type="text" id="pn-${L._id}" data-bind="prof.edit.${L._id}" value="${esc(P.edit[L._id]??P.nicks[L._id]??"")}" maxlength="20" autocomplete="off" aria-label="Nickname in ${esc(L.name)}"><button class="btn" type="button" data-act="profNick" data-lid="${L._id}" ${S.busy?"disabled":""}>Salva</button></div></div>`).join("")}</div>`}</section>`;
   if(ONLINE&&emailPw)html+=`<section class="card"><h3>Cambia password</h3>
    <input type="password" id="pp-1" data-bind="prof.pw" value="${esc(P.pw)}" placeholder="Nuova password (almeno 6 caratteri)" autocomplete="new-password">
    <input type="password" id="pp-2" data-bind="prof.pw2" value="${esc(P.pw2)}" placeholder="Ripeti la password" autocomplete="new-password">
-   <button class="btn sm" data-act="profPw" style="align-self:flex-start" ${S.busy?"disabled":""}>Salva password</button></section>`;
+   <button class="btn wide" data-act="profPw" ${S.busy?"disabled":""}>Salva password</button></section>`;
   const adm=mine.filter(L=>L.adminId===S.uid);
   html+=`<section class="card danger-zone"><h3>Elimina account</h3><p class="small" style="font-family:var(--f-ui)">Cancella per sempre il tuo account, le tue iscrizioni e i tuoi pronostici.${adm.length?` Per le leghe di cui sei admin (<b>${adm.map(L=>esc(L.name)).join(", ")}</b>) ti chiederemo di nominare un nuovo admin; quelle in cui sei l'unico iscritto verranno eliminate.`:""} Non si può annullare.</p>
-   ${P.delAsk?`<label class="small" for="pd-1" style="font-family:var(--f-ui)">Per confermare scrivi <b>ELIMINA</b></label>
+   ${P.delAsk?`<label class="flabel" for="pd-1">Per confermare scrivi ELIMINA</label>
    <input type="text" id="pd-1" data-bind="prof.del" value="${esc(P.del)}" placeholder="ELIMINA" autocomplete="off" autocapitalize="characters">
-   <div class="row" style="gap:8px"><button class="btn sm danger" data-act="profDel" ${S.busy?"disabled":""}>Conferma eliminazione</button><button class="btn sm ghost" data-act="profDelNo">Annulla</button></div>`
-   :`<button class="btn sm danger" data-act="profDelAsk" style="align-self:flex-start">Elimina il mio account</button>`}</section>`;
+   <div class="btns2"><button class="btn danger" data-act="profDel" ${S.busy?"disabled":""}>Elimina</button><button class="btn sec" data-act="profDelNo">Annulla</button></div>`
+   :`<button class="btn wide danger" data-act="profDelAsk">Elimina il mio account</button>`}</section>`;
   return html;
 }
 
 /* ---- Calendario Serie A (unico per tutte le leghe, sola lettura) ---- */
-function roundNav(n,act,selId){return `<div class="row calnav"><button class="btn sm sec" data-act="${act}" data-d="-1" ${n<=1?"disabled":""} aria-label="Giornata precedente">‹</button>
-   <select id="${selId}" aria-label="Giornata">${Array.from({length:38},(_,i)=>`<option value="${i+1}"${i+1===n?" selected":""}>${i+1}ª giornata</option>`).join("")}</select>
-   <button class="btn sm sec" data-act="${act}" data-d="1" ${n>=38?"disabled":""} aria-label="Giornata successiva">›</button></div>`}
+/* selettore della giornata (8/11): lo stesso di Risultati (etichetta + menu a tendina), in Calendario e nel pannello del sito */
+const CHEV=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
+function roundNav(n,act,selId,flat){return `<div class="ressel${flat?" flat":""}"><label for="${selId}">Giornata</label><div class="selwrap"><select id="${selId}">${Array.from({length:38},(_,i)=>`<option value="${i+1}"${i+1===n?" selected":""}>${i+1}ª giornata</option>`).join("")}</select>${CHEV}</div></div>`}
 const noCalendar=()=>`<section class="card"><div class="empty">${ONLINE?"Il calendario non è ancora stato caricato nel database.":"Calendario non disponibile."}</div></section>`;
 function vCalendar(){
-  let html=`<h2 class="pagetitle">Calendario Serie A 2026/27</h2>`;
+  let html="";
   if(!S.fixtures.length)return html+noCalendar();
   const n=S.calN||(S.calN=nextCalendarRound());
   html+=roundNav(n,"calStep","cal-n");
@@ -1354,7 +1359,7 @@ function vPanel(){
   const n=S.admN||(S.admN=adminDefaultRound());const fs=fixturesOf(n);
   if(!S.admEdit||S.admEdit.n!==n){S.admEdit={n,e:{}};for(const f of fs)S.admEdit.e[f.id]=admBase(f)}
   const now=Date.now();const pub=!!S.calRounds[n];const complete=fs.filter(f=>f.kickoff&&S.odds[f.id]).length;
-  html+=`<section class="card">${roundNav(n,"admStep","adm-n")}
+  html+=`<section class="card">${roundNav(n,"admStep","adm-n",1)}
    <div class="row"><span class="grow small" style="font-family:var(--f-ui)">${pub?"Quote <b>pubblicate</b>: i giocatori le vedono e possono pronosticare.":`Quote <b>non pubblicate</b> · partite pronte (orario e quote salvati): <b>${complete}/10</b>`}</span>
    <span class="chip ${pub?"ok":"warn"}">${pub?"Pubblicata":"Non pubblicata"}</span></div>
    <div class="row">${pub?`<button class="btn sm sec" data-act="admPub" data-v="0" ${S.busy?"disabled":""}>Ritira pubblicazione</button>`:`<button class="btn sm" data-act="admPub" data-v="1" ${S.busy?"disabled":""}>Pubblica quote</button>`}</div></section>
@@ -1376,17 +1381,17 @@ function vPanel(){
 /* ---- Crea una lega (4.1) ---- */
 function vCreate(){
   const f=S.form;
-  const opt=(name,id,val,bind,label,checked,rer)=>`<label class="opt"><input type="radio" name="${name}" id="${id}" value="${val}" data-bind="${bind}" ${rer?"data-rerender":""} ${checked?"checked":""}>${label}</label>`;
-  return `
-  <section class="card"><div class="q">Inserisci il nome della tua lega:</div><input type="text" id="cf-name" data-bind="form.name" value="${esc(f.name)}" maxlength="24" placeholder="Es. Lega del Bar Sport">
-   ${SHOW_LOGO?`<div class="row">${f.logo?`<div class="logo"><img src="${f.logo}" alt=""></div>`:""}<label class="small grow" style="font-family:var(--f-ui)">Logo (facoltativo) <input type="file" id="cf-logo" accept="image/*"></label></div>`:""}</section>
-  <section class="card"><div class="q">Accessibilità lega:<button class="help" data-act="help" data-k="access" aria-label="Spiegazione">?</button></div><div class="opts">
-   ${opt("cf-type","cf-type-pr","private","form.type","Privata",f.type==="private",1)}${opt("cf-type","cf-type-pu","public","form.type","Pubblica",f.type==="public",1)}</div></section>
-  ${f.type==="private"?`<section class="card"><div class="q">Scegli una password per la tua lega:</div><input type="text" id="cf-pw" data-bind="form.pw" value="${esc(f.pw)}" maxlength="30" autocomplete="off" placeholder="Almeno 6 caratteri"></section>`:""}
-  <section class="card"><div class="q">Criterio di spareggio</div><div class="tiebox"><p><b>1.</b> A pari punti è più in alto chi ha il <b>Miglior punteggio di giornata (MP)</b>: i punti più alti fatti in una singola giornata.</p><p><b>2.</b> Se anche l'MP è uguale, conta la <b>Miglior quota (MQ)</b>: la quota più alta indovinata con un singolo pronostico.</p><p><b>3.</b> Se MP e MQ sono uguali, i giocatori condividono la posizione (es. due secondi posti) e chi segue scala di conseguenza.</p></div></section>
-  <section class="card"><div class="q">Giornata di inizio della lega:</div>${firstOpenRound()?`<select id="cf-start" data-bind="form.start">${Array.from({length:38},(_,i)=>i+1).filter(n=>!calRoundStarted(n)).map(n=>`<option value="${n}"${+f.start===n?" selected":""}>${n}° Giornata</option>`).join("")}</select><p class="small muted" style="font-family:var(--f-ui)">Si può partire solo da una giornata non ancora iniziata.</p>`:`<p class="small" style="font-family:var(--f-ui)">Il campionato è finito: non ci sono giornate da cui partire.</p>`}</section>
-  <section class="card"><div class="q">Il tuo nickname:</div><input type="text" id="cf-nick" data-bind="form.nick" value="${esc(f.nick)}" maxlength="20" placeholder="Come ti vedranno gli altri"></section>
-  <section class="card">${S.formErr?`<p class="err center">${esc(S.formErr)}</p>`:""}<button class="btn wide" data-act="create" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Crea lega"}</button></section>`;
+  /* un solo riquadro (8/11): etichette piccole senza due punti, nel campo solo esempi; Privata/Pubblica come scelta a due */
+  const seg=(v,l)=>`<label class="segopt"><input type="radio" name="cf-type" id="cf-type-${v==="private"?"pr":"pu"}" value="${v}" data-bind="form.type" data-rerender ${f.type===v?"checked":""}><span>${l}</span></label>`;
+  return `<section class="card form">
+   <div class="fld"><label class="flabel" for="cf-name">Nome della lega</label><input type="text" id="cf-name" data-bind="form.name" value="${esc(f.name)}" maxlength="24" placeholder="Es. Lega del Bar Sport">
+    ${SHOW_LOGO?`<div class="row">${f.logo?`<div class="logo"><img src="${f.logo}" alt=""></div>`:""}<label class="small grow" style="font-family:var(--f-ui)">Logo (facoltativo) <input type="file" id="cf-logo" accept="image/*"></label></div>`:""}</div>
+   <div class="fld"><div class="flabel">Accesso<button class="help" data-act="help" data-k="access" aria-label="Spiegazione">?</button></div><div class="seg" role="radiogroup" aria-label="Accesso alla lega">${seg("private","Privata")}${seg("public","Pubblica")}</div></div>
+   ${f.type==="private"?`<div class="fld"><label class="flabel" for="cf-pw">Password della lega · almeno 6 caratteri</label><input type="text" id="cf-pw" data-bind="form.pw" value="${esc(f.pw)}" maxlength="30" autocomplete="off"></div>`:""}
+   <div class="fld"><label class="flabel" for="cf-start">Giornata di inizio</label>${firstOpenRound()?`<div class="selwrap"><select id="cf-start" data-bind="form.start">${Array.from({length:38},(_,i)=>i+1).filter(n=>!calRoundStarted(n)).map(n=>`<option value="${n}"${+f.start===n?" selected":""}>${n}ª giornata</option>`).join("")}</select>${CHEV}</div><p class="small muted" style="font-family:var(--f-ui)">Si può partire solo da una giornata non ancora iniziata.</p>`:`<p class="small" style="font-family:var(--f-ui)">Il campionato è finito: non ci sono giornate da cui partire.</p>`}</div>
+   <div class="fld"><label class="flabel" for="cf-nick">Il tuo nickname · come ti vedranno gli altri</label><input type="text" id="cf-nick" data-bind="form.nick" value="${esc(f.nick)}" maxlength="20" placeholder="Es. Vale"></div>
+   <div class="fld"><div class="flabel">Criterio di spareggio</div><div class="tiebox"><p><b>1.</b> A pari punti è più in alto chi ha il <b>Miglior punteggio di giornata (MP)</b>: i punti più alti fatti in una singola giornata.</p><p><b>2.</b> Se anche l'MP è uguale, conta la <b>Miglior quota (MQ)</b>: la quota più alta indovinata con un singolo pronostico.</p><p><b>3.</b> Se MP e MQ sono uguali, i giocatori condividono la posizione (es. due secondi posti) e chi segue scala di conseguenza.</p></div></div>
+   ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}<button class="btn wide" data-act="create" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Crea lega"}</button></section>`;
 }
 
 /* ---- Admin ---- */
@@ -1397,7 +1402,7 @@ function vAdmin(L){
   if(nr&&!st&&!S.pickStatusBusy){S.pickStatusBusy=true;B.pickStatus(nr.n).then(rows=>{S.pickStatus={lid:L._id,n:nr.n,rows:rows||[]}}).catch(e=>toast(itMsg(e))).finally(()=>{S.pickStatusBusy=false;render()})}
   const done=st?st.rows.filter(x=>x.picks>=10).length:0,tot=st?st.rows.length:approved().length;
   const plist=approved().filter(m=>m.mid||!ONLINE);const F=S.adjForm;
-  return `<section class="lhero"><div class="grow"><span class="eyebrow muted">Pannello admin</span><h2 class="disp">${esc(L.name)}</h2></div></section>
+  return `${leagueName(L)}
   <section class="card"><h3>Schedine ${nr?`della ${nr.n}ª giornata`:""}</h3>
    ${!nr?`<p class="small muted" style="font-family:var(--f-ui)">Non ci sono giornate da giocare.</p>`:!st?`<p class="small muted">Caricamento…</p>`:`
    <button type="button" class="pstat" data-act="toggleStatus" aria-expanded="${!!S.showStatus}"><span class="pnum"><b>${done}</b>/${tot}</span><span class="grow">hanno salvato tutti e 10 i pronostici${roundVisible(nr)?"":" · quote non ancora pubblicate"}</span><span class="pgo">${S.showStatus?"Chiudi":"Dettaglio"} ›</span></button>
@@ -1409,13 +1414,13 @@ function vAdmin(L){
    <form class="adjform" data-submit="addAdjust" novalidate>
     <select id="adj-mid" data-bind="adjForm.mid" aria-label="Partecipante"><option value="">Partecipante…</option>${plist.map(m=>`<option value="${esc(m.mid||m._id)}"${F.mid===(m.mid||m._id)?" selected":""}>${esc(m.nick)}</option>`).join("")}</select>
     <input type="text" id="adj-why" data-bind="adjForm.why" value="${esc(F.why)}" maxlength="80" placeholder="Motivo (facoltativo)" aria-label="Motivo">
-    <input type="text" inputmode="decimal" id="adj-pts" data-bind="adjForm.pts" value="${esc(F.pts)}" placeholder="Punti, es. -2" aria-label="Punti (con il meno per una penalità)">
-    <button class="btn sm" type="submit" ${S.busy?"disabled":""}>Applica</button></form>
+    <div class="fieldbtn"><input type="text" inputmode="decimal" id="adj-pts" data-bind="adjForm.pts" value="${esc(F.pts)}" placeholder="Punti, es. -2" aria-label="Punti (con il meno per una penalità)">
+    <button class="btn" type="submit" ${S.busy?"disabled":""}>Applica</button></div></form>
    ${S.formErr&&S.formErrAt==="adj"?`<p class="err">${esc(S.formErr)}</p>`:""}
    ${(S.adjust||[]).length?`<div class="list">${S.adjust.map(a=>`<div class="row"><span class="adjmark ${a.pts<0?"neg":"pos"}">${a.pts>0?"+":"−"}${f2(Math.abs(a.pts))}</span><span class="grow">${esc(S.members.find(m=>m.mid===a.mid)?.nick||"—")}${a.why?` <span class="small muted">· ${esc(a.why)}</span>`:""}</span><button class="btn sm ghost" data-act="delAdjust" data-id="${a.id}">Annulla</button></div>`).join("")}</div>`:""}
   </section>
-  ${L.type==="private"?`<section class="card"><h3>Password della lega</h3><form class="row" data-submit="setLeaguePw" novalidate><input type="text" id="lpw" class="grow" data-bind="pwForm" value="${esc(S.pwForm)}" placeholder="${S.leaguePw[L._id]?"Nuova password":"Imposta la password"}" autocomplete="off" aria-label="Nuova password"><button class="btn sm" type="submit" ${S.busy?"disabled":""}>Salva</button></form><p class="small muted" style="font-family:var(--f-ui)">${S.leaguePw[L._id]?`Attuale: <b>${esc(S.leaguePw[L._id])}</b>. `:""}Gli iscritti la vedono nella pagina della lega, per invitare altri.</p></section>`:""}
-  ${S.confirm==="delLeague"?`<section class="card" id="del-league"><h3>Eliminare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Verranno eliminate giornate, schedine e classifica per tutti i partecipanti. Non si può annullare.</p><div class="row"><button class="btn danger" data-act="delLeague">Elimina definitivamente</button><button class="btn sec" data-act="delLeagueNo">Annulla</button></div></section>`:`<section class="card"><button class="btn wide danger" data-act="delLeague">Elimina lega</button></section>`}`;
+  ${L.type==="private"?`<section class="card"><h3>Password della lega</h3><form class="fieldbtn" data-submit="setLeaguePw" novalidate><input type="text" id="lpw" data-bind="pwForm" value="${esc(S.pwForm)}" placeholder="${S.leaguePw[L._id]?"Nuova password":"Imposta la password"}" autocomplete="off" aria-label="Nuova password"><button class="btn" type="submit" ${S.busy?"disabled":""}>Salva</button></form><p class="small muted" style="font-family:var(--f-ui)">${S.leaguePw[L._id]?`Attuale: <b>${esc(S.leaguePw[L._id])}</b>. `:""}Gli iscritti la vedono nella pagina della lega, per invitare altri.</p></section>`:""}
+  ${S.confirm==="delLeague"?`<section class="card" id="del-league"><h3>Eliminare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Verranno eliminate giornate, schedine e classifica per tutti i partecipanti. Non si può annullare.</p><div class="btns2"><button class="btn danger" data-act="delLeague">Elimina</button><button class="btn sec" data-act="delLeagueNo">Annulla</button></div></section>`:`<section class="card"><button class="btn wide danger" data-act="delLeague">Elimina lega</button></section>`}`;
 }
 
 /* aggiorna countdown e blocchi ogni 30 s se non si sta scrivendo */
