@@ -854,6 +854,7 @@ const I={
   home:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>`,
   slip:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h2M8 12h2M8 16h2M14 8h2M14 12h2M14 16h2"/></svg>`,
   close:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+  check:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>`,
   grid:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16M10 4v16"/></svg>`,
   rank:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 20V12h5v8M9 20V6h6v14M15 20v-5h5v5M3 20h18"/></svg>`,
   stats:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>`,
@@ -889,8 +890,11 @@ function render(){
   const brand=title==="TotoFanta"?`<h1 class="brand" aria-label="TotoFanta"><span class="bt">TOTO</span><span class="bf">FANTA</span></h1>`:`<h1>${title}</h1>`;
   const meNick=myMember()?.nick||S.localUsers.find(u=>u.id===S.uid)?.name||S.email||"?";
   const rightBtn=bare||S.screen==="profilo"?"<span></span>":`<button class="avatar" data-act="openProfile" aria-label="Profilo">${esc((meNick.trim()[0]||"?").toUpperCase())}</button>`;
-  app.innerHTML=`<header class="top"><div class="col">${leftBtn}${brand}${rightBtn}</div></header>
-  <main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${!bare&&S.modal==="xfer"&&S.xfer?vXfer():""}${!bare&&S.modal==="xferLeave"&&S.xferLeave?vXferLeave():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
+  /* su PC (8/11): menu laterale fisso al posto del menu a scomparsa e della barra in basso; vedi @media (min-width:1024px) */
+  document.body.classList.toggle("hasside",!bare);
+  document.body.classList.toggle("wide",!!L&&!bare&&["home","pronostici","classifica","risultati"].includes(S.screen));
+  app.innerHTML=`<header class="top${!bare&&title==="TotoFanta"?" brandscr":""}"><div class="col">${leftBtn}${brand}${rightBtn}</div></header>
+  ${bare?"":vSide()}<main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${!bare&&S.modal==="xfer"&&S.xfer?vXfer():""}${!bare&&S.modal==="xferLeave"&&S.xferLeave?vXferLeave():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
   if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
   placeNextBar();
@@ -930,16 +934,20 @@ function vDrawer(){
   const who=ONLINE
     ?`<button class="profbtn" data-act="openProfile"><span class="bigav" aria-hidden="true">${esc(((me?.nick||S.email||"?").trim()[0]||"?").toUpperCase())}</span><span class="pinfo"><b>${esc(me?.nick||"Il tuo profilo")}</b><span class="small">${esc(S.email)}</span></span><span class="pgo">Profilo ›</span></button>`
     :`<label class="small" for="who-sel">Stai giocando come</label><select id="who-sel">${S.localUsers.map(u=>`<option value="${u.id}"${u.id===S.uid?" selected":""}>${esc(u.name)}</option>`).join("")}</select><button class="btn" data-act="addLocal">+ Nuovo giocatore</button><button class="btn" data-act="openProfile">Profilo</button>`;
-  const mine=myLeagues();
-  /* cambio lega (solo con più leghe): un menu a tendina nella parte blu */
-  /* riquadro della lega sempre visibile; con più leghe ha la freccia e apre il menu a tendina */
-  const open=!!S.lsOpen;
-  const sw=L?(mine.length>1?`<div class="lsbox${open?" open":""}"><button type="button" class="lswitch" data-act="lsToggle" aria-expanded="${open}" aria-haspopup="listbox"><span class="lsl">Lega</span><span class="lsn">${esc(L.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
-    ${open?`<div class="lsmenu" role="listbox" aria-label="Scegli la lega">${mine.map(x=>`<button type="button" class="lsitem${x._id===S.lid?" cur":""}" role="option" aria-selected="${x._id===S.lid}" data-act="lsPick" data-lid="${x._id}">${logoHtml(x)}<span class="grow">${esc(x.name)}</span>${x._id===S.lid?`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>`:""}</button>`).join("")}</div>`:""}</div>`
-    :`<div class="lswitch single"><span class="lsl">Lega</span><span class="lsn">${esc(L.name)}</span></div>`):"";
+  const sw=leagueSwitch(L);
   return `<div class="scrim" data-act="closeAll"></div><aside class="drawer" aria-label="Menu">
   <div class="head">${who}${ONLINE?`<button class="logoutbtn" data-act="logout">${I.logout}Logout</button>`:""}${sw}</div>
-  <nav>
+  <nav>${sideLinks()}</nav><p class="dsrc">Football data provided by the Football-Data.org API · <a href="termini.html">Termini</a> · <a href="privacy.html">Privacy</a></p></aside>`;
+}
+/* riquadro della lega sempre visibile; con più leghe ha la freccia e apre il menu a tendina */
+function leagueSwitch(L){const mine=myLeagues();
+  const open=!!S.lsOpen;
+  return L?(mine.length>1?`<div class="lsbox${open?" open":""}"><button type="button" class="lswitch" data-act="lsToggle" aria-expanded="${open}" aria-haspopup="listbox"><span class="lsl">Lega</span><span class="lsn">${esc(L.name)}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+    ${open?`<div class="lsmenu" role="listbox" aria-label="Scegli la lega">${mine.map(x=>`<button type="button" class="lsitem${x._id===S.lid?" cur":""}" role="option" aria-selected="${x._id===S.lid}" data-act="lsPick" data-lid="${x._id}">${logoHtml(x)}<span class="grow">${esc(x.name)}</span>${x._id===S.lid?`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>`:""}</button>`).join("")}</div>`:""}</div>`
+    :`<div class="lswitch single"><span class="lsl">Lega</span><span class="lsn">${esc(L.name)}</span></div>`):"";
+}
+/* voci del menu (stesse nel menu a scomparsa del telefono e nel menu laterale del PC) */
+function sideLinks(){return `
    <div class="grp">Leghe</div>
    <button class="dl" data-act="newLeague">${I.plus}Crea una lega</button><button class="dl" data-act="joinModal">${I.enter}Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">${I.league}Le mie leghe</button>
    <div class="grp">Il tuo gioco</div>
@@ -947,8 +955,18 @@ function vDrawer(){
    <div class="grp">Serie A</div>
    <button class="dl" data-act="openCal">${I.cal}Calendario</button>
    <div class="grp">App</div>
-   <button class="dl" data-act="go" data-s="impostazioni">${I.cog}Impostazioni</button>
-  </nav><p class="dsrc">Football data provided by the Football-Data.org API · <a href="termini.html">Termini</a> · <a href="privacy.html">Privacy</a></p></aside>`;
+   <button class="dl" data-act="go" data-s="impostazioni">${I.cog}Impostazioni</button>`}
+/* menu laterale del PC: logo, lega, sezioni della lega (con Pronostici), poi le voci del menu e il profilo in fondo */
+function vSide(){
+  const L=league();const me=myMember();const cur=S.screen==="admin"?"lega":S.screen;
+  const it=(k,t,ic)=>`<button class="dl${cur===k?" cur":""}" data-act="go" data-s="${k}" ${cur===k?'aria-current="page"':""} ${!L&&k!=="home"?"disabled":""}>${ic}<span>${t}</span></button>`;
+  const nm=me?.nick||S.localUsers.find(u=>u.id===S.uid)?.name||"Il tuo profilo";
+  return `<aside class="dside" aria-label="Menu laterale"><p class="sbrand" aria-hidden="true"><span class="bt">TOTO</span><span class="bf">FANTA</span></p>
+  ${leagueSwitch(L)}
+  <nav>${it("home","Home",I.home)}${it("pronostici","Pronostici",I.check)}${it("classifica","Classifica",I.rank)}${it("risultati","Risultati",I.grid)}${sideLinks()}</nav>
+  ${!ONLINE&&!S.drawer?`<select id="who-sel" aria-label="Stai giocando come">${S.localUsers.map(u=>`<option value="${u.id}"${u.id===S.uid?" selected":""}>${esc(u.name)}</option>`).join("")}</select>`:""}
+  <button class="sme" data-act="openProfile"><span class="av" aria-hidden="true">${esc((nm.trim()[0]||"?").toUpperCase())}</span><span class="grow"><b>${esc(nm)}</b><span class="small muted">Profilo</span></span></button>
+  <p class="dsrc">Football data provided by the Football-Data.org API · <a href="termini.html">Termini</a> · <a href="privacy.html">Privacy</a></p></aside>`;
 }
 function vLeave(){return `<div class="scrim" data-act="leaveStay"></div><div class="card modal" role="alertdialog" aria-modal="true" aria-labelledby="lvt"><h2 id="lvt">Pronostici non salvati</h2><p class="small" style="font-family:var(--f-ui)">Hai modificato dei pronostici senza salvarli. Se esci ora le modifiche vanno perse.</p>
   <button class="btn block" data-act="leaveSave" ${S.busy?"disabled":""}>Salva ed esci</button><button class="btn block sec" data-act="leaveDiscard">Esci senza salvare</button><button class="btn ghost" data-act="leaveStay">Resta qui</button></div>`}
@@ -1060,9 +1078,12 @@ function vHome(L){
   const r=currentRound();
   let html=leagueTitle();
   /* riepilogo classifica (2.2): sempre visibile, anche prima dei risultati */
-  html+=`<section class="hero">${statusCard(L,r)}</section>`;
+  html+=`<div class="hgrid"><section class="hero">${statusCard(L,r)}</section><div class="hside">`;
   /* riepilogo classifica (2.2): sempre visibile; tutta la card porta alla classifica */
   html+=`<button type="button" class="card statcard" data-act="go" data-s="classifica" aria-label="Vai alla classifica"><span class="statnick">${esc(myMember()?.nick||"")}</span><span class="stats"><span><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></span><span><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></span></span><span class="golink">Vai alla classifica ›</span></button>`;
+  /* solo su PC: prime 5 della classifica e miglior punteggio di giornata nella colonna di destra */
+  if(rows.length)html+=`<section class="card donly mtop"><h3>Classifica</h3><div class="mtl">${rows.slice(0,5).map(x=>`<div class="mtr${x.uid===S.uid?" me":""}"><span>${x.pos}</span><span class="grow">${esc(x.nick)}</span><b>${f2(x.total)}</b></div>`).join("")}</div></section>`;
+  html+=mpCard(rows,"donly")+`</div>`;
   /* le partite si vedono sempre (gli accoppiamenti sono fissi), anche prima che le quote siano pubblicate */
   if(r&&r.matches.length){
     /* tutte le partite in ordine di orario: quelle finite mostrano il risultato; la barra parte dalla prima non ancora finita */
@@ -1071,7 +1092,7 @@ function vHome(L){
     html+=`<div class="nextwrap"><div class="nexthead"><span class="disp">${!upcoming.length?"Risultati":upcoming.length<r.matches.length?"Incontri":"Prossimi incontri"}</span><span class="small muted">${r.n}ª giornata</span></div>
     <div class="next" id="next-bar" data-round="${r.n}">${show.map(m=>`<div class="mini${esito(m)?" done":m.kickoff&&+new Date(m.kickoff)<=Date.now()?" live":""}"><div class="teams">${crest(m.home)}<span>${abbr(m.home)}–${abbr(m.away)}</span>${crest(m.away)}</div><div class="when">${esito(m)?`<span>Finale</span><span><b>${m.hg}-${m.ag}</b></span>`:(m.kickoff&&+new Date(m.kickoff)<=Date.now()?`<span>${fmtDow(m.kickoff)}</span><span class="live">In corso</span>`:m.kickoff?`<span>${fmtDow(m.kickoff)}</span><span>${fmtTime(m.kickoff)}</span>`:`<span>${m.day?fmtDow(m.day):"—"}</span><span>da definire</span>`)}</div></div>`).join("")}</div></div>`;
   }
-  return html;
+  return html+`</div>`;
 }
 /* card blu della Home (proposta A): giornata e stato, pulsante, "Hai ancora" e timer */
 /* stato della giornata (8/11): stesso chip dei Pronostici */
@@ -1111,18 +1132,18 @@ function vPicks(L){
   const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=!roundLocked(r);
   if(anyOpen&&ONLINE){const ts=r.matches.map(m=>S.odds[m.id]?.at).filter(Boolean).sort();const last=ts[ts.length-1];
     html+=`<p class="small muted oddsnote">Quote provvisorie: si aggiornano fino al fischio d'inizio della prima partita e i punti si calcolano su quelle finali${last?` · ultima variazione ${fmtStamp(last)}`:""}</p>`}
-  html+=r.matches.map(m=>{
+  html+=`<div class="pcols"><div class="pmatch">`+r.matches.map(m=>{
     const locked=roundLocked(r);const started=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
       return `<button class="${cls}" ${locked?"disabled":""} data-act="pick" data-r="${r._id}" data-m="${m.id}" data-p="${k}" aria-pressed="${sel}" aria-label="${esc(m.home)}–${esc(m.away)}: ${k}, quota ${o?o.toFixed(2):"non disponibile"}"><span class="s">${k}</span><span class="o">${o?o.toFixed(2):"—"}</span></button>`};
     const dot=t=>{const c=COLORS[t]||["#888","#444"];return `<span class="tdot" style="background:${c[0]};border-color:${c[1]}" aria-hidden="true"></span>`};
     const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(started?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
-    return `<section class="card match"><div class="mrow"><div class="minfo"><span class="mdate">${fmtDow(m.kickoff)} · ${fmtTime(m.kickoff)}</span><span class="mteam">${dot(m.home)}<span>${esc(m.home)}</span>${e?`<b class="mgoal">${m.hg}</b>`:""}</span><span class="mteam">${dot(m.away)}<span>${esc(m.away)}</span>${e?`<b class="mgoal">${m.ag}</b>`:""}</span></div>${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("");
+    return `<section class="card match"><div class="mrow"><div class="minfo"><span class="mdate">${fmtDow(m.kickoff)} · ${fmtTime(m.kickoff)}</span><span class="mteam">${dot(m.home)}<span>${esc(m.home)}</span>${e?`<b class="mgoal">${m.hg}</b>`:""}</span><span class="mteam">${dot(m.away)}<span>${esc(m.away)}</span>${e?`<b class="mgoal">${m.ag}</b>`:""}</span></div>${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("")+`</div><div class="paside">`;
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary${roundLocked(r)?"":" two"}"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div>${roundLocked(r)?`<div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div>`:`<div><b>${f2(potential)}</b><span>Punteggio massimo</span></div>`}</div>
   <p class="small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
   if(anyOpen)html+=`<div class="savebar"><span class="small">${dirty?"Modifiche da salvare":"Nessuna modifica da salvare"}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":"Salva"}</button></div>`;
-  return html;
+  return html+`</div></div>`;
 }
 function vOthers(r){
   if(!roundLocked(r))return "";
@@ -1144,7 +1165,7 @@ function vResults(L){
     return html+`<section class="card"><p class="cta-title">Ancora nessuna giornata giocata</p><p class="center small muted" style="font-family:var(--f-ui)">${fk?`I pronostici di tutti saranno visibili dal fischio d'inizio della ${nx.n}ª giornata, ${fmtDow(fk)} alle ${fmtTime(fk)}.`:"I pronostici di tutti si vedono dal fischio d'inizio della prima partita di ogni giornata."}</p></section>`}
   const r=list.find(x=>x.n===S.resN)||list[0];needRound(r.n);
   const st=r2=>roundDone(r2)?"Conclusa":"In corso";
-  html+=`<div class="ressel"><label for="res-n">Giornata</label><div class="selwrap"><select id="res-n">${list.map(x=>`<option value="${x.n}"${x.n===r.n?" selected":""}>${x.n}ª giornata · ${st(x)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div>`;
+  html=`<div class="rhead">${leagueTitle()}<div class="ressel"><label for="res-n">Giornata</label><div class="selwrap"><select id="res-n">${list.map(x=>`<option value="${x.n}"${x.n===r.n?" selected":""}>${x.n}ª giornata · ${st(x)}</option>`).join("")}</select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div></div>`;
   /* punti e posizione della giornata (pari punti: miglior quota, poi nome), per la riga Totale */
   const pl=approved().map(m=>({m,pk:pickDoc(r._id,m._id)?.picks||{},...roundScore(r,m._id)})).sort((a,b)=>(b.pts-a.pts)||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
   pl.forEach((d,i)=>{const p=pl[i-1];d.pos=(p&&p.pts===d.pts)?p.pos:i+1});
@@ -1242,20 +1263,22 @@ function vStandings(L){
   /* intestazione blu: nome della lega in grande (podio e classifiche di giornata tolti il 7/11) */
   let html=leagueTitle();
   const v=(x)=>x?f2(x):"–";
+  /* su PC (8/11): una colonna di punti per ogni giornata con risultati, e il riquadro MP a destra */
+  const ns=scored.map(r=>r.n).sort((a,b)=>a-b);
   {
-    html+=`<section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th></tr></thead><tbody>
-    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos"><span class="posb${r.pos<=3?" p"+r.pos:""}">${r.pos}</span></td><td class="nm">${esc(r.nick)}${r.adj?` <span class="adjmark ${r.adj<0?"neg":"pos"}" title="${r.adj<0?"Penalità":"Bonus"} dell'admin">${r.adj>0?"+":"−"}${f2(Math.abs(r.adj))}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td></tr>`).join("")}
+    html+=`<div class="ccols"><section class="card"><div class="tbl"><table><thead><tr><th style="text-align:center">Pos.</th><th>Giocatore</th><th class="n">Punti</th><th class="n"><button class="thhelp" type="button" data-act="help" data-k="mp" title="Miglior punteggio: il punteggio più alto ottenuto in una singola giornata" aria-label="MP: spiegazione">MP</button></th>${ns.map(n=>`<th class="n donly">${n}ª</th>`).join("")}</tr></thead><tbody>
+    ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos"><span class="posb${r.pos<=3?" p"+r.pos:""}">${r.pos}</span></td><td class="nm">${esc(r.nick)}${r.adj?` <span class="adjmark ${r.adj<0?"neg":"pos"}" title="${r.adj<0?"Penalità":"Bonus"} dell'admin">${r.adj>0?"+":"−"}${f2(Math.abs(r.adj))}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td>${ns.map(n=>`<td class="n donly muted">${r.perRound[n]!=null?f2(r.perRound[n]):"–"}</td>`).join("")}</tr>`).join("")}
     </tbody></table></div>${adjustNotes()}</section>`;
   }
-  /* riquadro in fondo (8/11): il miglior punteggio di giornata della lega (MP), con giocatore e giornata; a pari merito tutti */
-  const top=Math.max(0,...rows.map(r=>r.mp||0));
-  if(top>0){
-    const best=[];for(const r of rows)if(r.mp===top)for(const [n,pts] of Object.entries(r.perRound))if(pts===top)best.push({nick:r.nick,n:+n,me:r.uid===S.uid});
-    best.sort((a,b)=>a.n-b.n||a.nick.localeCompare(b.nick,"it",{sensitivity:"base"}));
-    html+=`<section class="card mpcard"><h3>Miglior punteggio di giornata</h3><div class="sbest"><b>${f2(top)}</b>
-     ${best.map(x=>`<span class="small"><span class="mpnick${x.me?" me":""}">${esc(x.nick)}</span> · ${x.n}ª giornata</span>`).join("")}</div></section>`;
-  }
-  return html;
+  return html+`<div class="cside">${mpCard(rows)}</div></div>`;
+}
+/* riquadro (8/11): il miglior punteggio di giornata della lega (MP), con giocatore e giornata; a pari merito tutti */
+function mpCard(rows,cls){
+  const top=Math.max(0,...rows.map(r=>r.mp||0));if(!(top>0))return "";
+  const best=[];for(const r of rows)if(r.mp===top)for(const [n,pts] of Object.entries(r.perRound))if(pts===top)best.push({nick:r.nick,n:+n,me:r.uid===S.uid});
+  best.sort((a,b)=>a.n-b.n||a.nick.localeCompare(b.nick,"it",{sensitivity:"base"}));
+  return `<section class="card mpcard${cls?" "+cls:""}"><h3>Miglior punteggio di giornata</h3><div class="sbest"><b>${f2(top)}</b>
+   ${best.map(x=>`<span class="small"><span class="mpnick${x.me?" me":""}">${esc(x.nick)}</span> · ${x.n}ª giornata</span>`).join("")}</div></section>`;
 }
 
 /* ---- Lega: regolamento, invito, partecipanti ---- */

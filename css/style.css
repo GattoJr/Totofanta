@@ -706,3 +706,70 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .adjform>*{min-width:0}
 /* Crea lega: il menu della giornata di inizio con lo stesso carattere degli altri campi */
 .card.form .selwrap select{font-family:inherit;font-weight:500;font-size:16px}
+/* ===== PC (8/11): menu laterale fisso e contenuto su due colonne. Sul telefono non cambia niente ===== */
+.dside,.donly{display:none}
+.hgrid,.hside,.ccols,.cside{display:flex;flex-direction:column;gap:16px;min-width:0}
+.rhead{display:flex;flex-direction:column;gap:16px}
+.pcols,.pmatch,.paside{display:contents}
+.mtl{display:flex;flex-direction:column}
+.mtr{display:grid;grid-template-columns:28px 1fr auto;align-items:center;gap:10px;padding:9px 6px;border-top:1px solid var(--line);font-family:var(--f-ui)}
+.mtr:first-child{border-top:0}
+.mtr>span:first-child{font-weight:700;text-align:center}
+.mtr.me{background:var(--blue-soft);border-radius:8px;font-weight:700}
+.mtr b{font-variant-numeric:tabular-nums}
+@media (min-width:1024px){
+  body.hasside{padding-left:260px}
+  .dside{display:flex;flex-direction:column;gap:4px;position:fixed;top:0;bottom:0;left:0;width:260px;box-sizing:border-box;overflow-y:auto;background:var(--card);border-right:1px solid var(--line);padding:22px 14px 14px;z-index:20}
+  .dside .sbrand{font-family:var(--f-disp);font-style:italic;font-weight:800;font-size:34px;line-height:1;margin:0 0 14px;padding:0 10px}
+  .dside .sbrand .bf{color:var(--brand-accent)}
+  .dside .lswitch,.dside button.lswitch{background:var(--field);border:1px solid var(--line);color:var(--ink);margin:0 0 8px}
+  .dside .lswitch:focus-within{outline-color:var(--blue)}
+  .dside .lsbox{margin:0 0 8px}.dside .lsbox .lswitch{margin:0}
+  .dside nav{display:flex;flex-direction:column;gap:2px}
+  .dside .grp{font-family:var(--f-disp);font-weight:700;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:16px 12px 4px}
+  .dside .dl{display:flex;align-items:center;gap:12px;width:100%;border:0;background:none;padding:10px 12px;border-radius:10px;font:600 15px var(--f-ui);color:var(--ink);text-align:left;cursor:pointer}
+  .dside .dl svg{width:20px;height:20px;flex:none;color:var(--muted)}
+  .dside .dl:hover:not(:disabled){background:var(--field)}
+  .dside .dl.cur{background:var(--blue-soft);color:var(--blue-text)}
+  .dside .dl.cur svg{color:var(--blue-text)}
+  .dside .dl:disabled{opacity:.45;cursor:default}
+  .dside #who-sel{margin-top:12px;font-size:14px;padding:8px 10px}
+  .dside .sme{margin-top:auto;display:flex;align-items:center;gap:10px;width:100%;border:0;border-top:1px solid var(--line);background:none;padding:14px 10px 10px;font:inherit;color:inherit;text-align:left;cursor:pointer}
+  .dside .sme .av{width:38px;height:38px;border-radius:50%;background:var(--blue-soft);color:var(--blue-text);display:grid;place-items:center;font-weight:700;flex:none}
+  .dside .sme b{display:block;font-size:14px}
+  .dside .dsrc{margin:6px 10px 0;font-family:var(--f-ui);font-size:11px;color:var(--muted);line-height:1.4}
+  .dside .dsrc a{color:inherit}
+  body.hasside .nav{display:none}
+  body.hasside .top .iconbtn[data-act=drawer],body.hasside .top .avatar{visibility:hidden}
+  body.hasside .top.brandscr{display:none}
+  body.hasside main{padding-block:28px 48px;gap:24px}
+  body.hasside .col{max-width:760px;padding-inline:32px}
+  body.hasside.wide .col{max-width:1180px}
+  body.hasside .toast{bottom:24px}
+  body.hasside .pickhead{top:0;margin-inline:-32px;padding-inline:32px}
+  .donly{display:revert}
+  .card.donly{display:flex}
+  /* Home: card blu e incontri a sinistra, classifica a destra */
+  .hgrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(300px,1fr);grid-template-areas:"hero side" "next side";grid-template-rows:auto 1fr;gap:24px;align-items:start}
+  .hgrid>.hero{grid-area:hero}.hgrid>.hside{grid-area:side;gap:24px}.hgrid>.nextwrap{grid-area:next}
+  .hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,300px);column-gap:28px;row-gap:10px;align-items:center;padding:28px}
+  .hero>*{grid-column:1}
+  .hero>.btn.hbtn{grid-column:2;grid-row:1/span 4;height:56px}
+  .hero .timer{align-items:flex-start;text-align:left}
+  .hero .timer .clock{font-size:40px;white-space:nowrap}
+  .hero .hero-top{justify-content:flex-start;gap:12px}
+  .hero-sub{text-align:left}
+  .next{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));overflow:visible;gap:12px;padding:2px 0 0}
+  .next .mini{width:auto}
+  /* Pronostici: partite su due colonne, riepilogo e Salva in un riquadro fisso a destra */
+  .pcols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+  .pmatch{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
+  .pmatch .card.match{margin:0}
+  .paside{display:flex;flex-direction:column;gap:16px;position:sticky;top:96px}
+  .paside .savebar{position:static;box-shadow:none;border:1px solid var(--line)}
+  /* Classifica: tabella con i punti di ogni giornata, riquadro MP a destra */
+  .ccols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+  /* Risultati: menu della giornata accanto al nome della lega */
+  .rhead{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  .rhead .ressel{flex:0 1 380px}
+}
