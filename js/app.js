@@ -1055,7 +1055,7 @@ function vHome(L){
   /* riepilogo classifica (2.2): sempre visibile, anche prima dei risultati */
   html+=`<section class="hero">${statusCard(L,r)}</section>`;
   /* riepilogo classifica (2.2): sempre visibile; tutta la card porta alla classifica */
-  html+=`<button type="button" class="card statcard" data-act="go" data-s="classifica" aria-label="Vai alla classifica"><span class="stathead"><span class="statnick">${esc(myMember()?.nick||"")}</span><span class="golink">Vai alla classifica ›</span></span><span class="stats"><span><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></span><span><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></span></span></button>`;
+  html+=`<button type="button" class="card statcard" data-act="go" data-s="classifica" aria-label="Vai alla classifica"><span class="statnick">${esc(myMember()?.nick||"")}</span><span class="stats"><span><b>${mine?mine.pos+"°":"–"}</b><span>Posizione</span></span><span><b>${mine?f2(mine.total):"0.00"}</b><span>Punti</span></span></span><span class="golink">Vai alla classifica ›</span></button>`;
   /* le partite si vedono sempre (gli accoppiamenti sono fissi), anche prima che le quote siano pubblicate */
   if(r&&r.matches.length){
     /* tutte le partite in ordine di orario: quelle finite mostrano il risultato; la barra parte dalla prima non ancora finita */
