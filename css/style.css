@@ -655,3 +655,8 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .statcard .statnick{align-self:flex-start;text-align:left;font-family:var(--f-ui);font-weight:700;font-size:16px;margin:0}
 .statcard .golink{align-self:center;text-align:center}
 .statcard .stats b{display:block;width:100%;text-align:center}
+/* Classifica: riquadro del miglior punteggio di giornata */
+.mpcard h3{margin:0}
+.mpcard .sbest .small{font-size:14px;color:var(--ink)}
+.mpcard .mpnick{font-weight:700}
+.mpcard .mpnick.me{color:var(--blue-text)}

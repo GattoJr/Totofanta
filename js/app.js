@@ -1235,6 +1235,14 @@ function vStandings(L){
     ${rows.map(r=>`<tr class="${r.uid===S.uid?"me":""}"><td class="pos"><span class="posb${r.pos<=3?" p"+r.pos:""}">${r.pos}</span></td><td class="nm">${esc(r.nick)}${r.adj?` <span class="adjmark ${r.adj<0?"neg":"pos"}" title="${r.adj<0?"Penalità":"Bonus"} dell'admin">${r.adj>0?"+":"−"}${f2(Math.abs(r.adj))}</span>`:""}</td><td class="n"><b>${f2(r.total)}</b></td><td class="n">${v(r.mp)}</td><td class="n">${v(r.mq)}</td></tr>`).join("")}
     </tbody></table></div>${adjustNotes()}</section>`;
   }
+  /* riquadro in fondo (8/11): il miglior punteggio di giornata della lega (MP), con giocatore e giornata; a pari merito tutti */
+  const top=Math.max(0,...rows.map(r=>r.mp||0));
+  if(top>0){
+    const best=[];for(const r of rows)if(r.mp===top)for(const [n,pts] of Object.entries(r.perRound))if(pts===top)best.push({nick:r.nick,n:+n,me:r.uid===S.uid});
+    best.sort((a,b)=>a.n-b.n||a.nick.localeCompare(b.nick,"it",{sensitivity:"base"}));
+    html+=`<section class="card mpcard"><h3>Miglior punteggio di giornata</h3><div class="sbest"><b>${f2(top)}</b>
+     ${best.map(x=>`<span class="small"><span class="mpnick${x.me?" me":""}">${esc(x.nick)}</span> · ${x.n}ª giornata</span>`).join("")}</div></section>`;
+  }
   return html;
 }
 
