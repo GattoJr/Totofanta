@@ -892,3 +892,13 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .resord{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border-radius:12px;background:var(--field);border:1px solid var(--line)}
 .resord .segb{min-height:40px;border:0;border-radius:9px;background:none;font:600 13px var(--f-ui);color:var(--muted);cursor:pointer}
 .resord .segb[aria-pressed=true]{background:var(--card);color:var(--blue-text);font-weight:700;box-shadow:0 1px 3px rgba(13,24,48,.15)}
+/* PC (11/11): profilo in alto nel menu laterale, come sul telefono */
+@media (min-width:1024px){
+  .dside .sme{margin:0 0 10px;border:1px solid var(--line);border-radius:12px;background:var(--field);padding:10px 12px}
+  .dside .sme:hover{border-color:var(--blue)}
+  .dside .sme .grow{min-width:0}
+  .dside .sme .sem{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dside .sme .spg{font:600 12px var(--f-ui);color:var(--blue-text);white-space:nowrap}
+  .dside .dsrc{margin-top:auto;padding-top:14px}
+}
+@media (min-width:1024px){.resord{max-width:420px}.rmx .pnm{max-width:100%}}

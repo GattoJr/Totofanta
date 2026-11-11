@@ -959,16 +959,16 @@ function sideLinks(){return `
    <button class="dl" data-act="openCal">${I.cal}Calendario</button>
    <div class="grp">App</div>
    <button class="dl" data-act="go" data-s="impostazioni">${I.cog}Impostazioni</button>`}
-/* menu laterale del PC: logo, lega, sezioni della lega (con Pronostici), poi le voci del menu e il profilo in fondo */
+/* menu laterale del PC: logo, profilo (in alto come sul telefono, 11/11), lega, sezioni della lega (con Pronostici), poi le voci del menu */
 function vSide(){
   const L=league();const me=myMember();const cur=S.screen==="admin"?"lega":S.screen;
   const it=(k,t,ic)=>`<button class="dl${cur===k?" cur":""}" data-act="go" data-s="${k}" ${cur===k?'aria-current="page"':""} ${!L&&k!=="home"?"disabled":""}>${ic}<span>${t}</span></button>`;
   const nm=me?.nick||S.localUsers.find(u=>u.id===S.uid)?.name||"Il tuo profilo";
   return `<aside class="dside" aria-label="Menu laterale"><p class="sbrand" aria-hidden="true"><span class="bt">TOTO</span><span class="bf">FANTA</span></p>
+  <button class="sme" data-act="openProfile"><span class="av" aria-hidden="true">${esc((nm.trim()[0]||"?").toUpperCase())}</span><span class="grow"><b>${esc(nm)}</b>${S.email?`<span class="small muted sem">${esc(S.email)}</span>`:""}</span><span class="spg">Profilo ›</span></button>
   ${leagueSwitch(L)}
   <nav>${it("home","Home",I.home)}${it("pronostici","Pronostici",I.check)}${it("classifica","Classifica",I.rank)}${it("risultati","Risultati",I.grid)}${sideLinks()}</nav>
   ${!ONLINE&&!S.drawer?`<select id="who-sel" aria-label="Stai giocando come">${S.localUsers.map(u=>`<option value="${u.id}"${u.id===S.uid?" selected":""}>${esc(u.name)}</option>`).join("")}</select>`:""}
-  <button class="sme" data-act="openProfile"><span class="av" aria-hidden="true">${esc((nm.trim()[0]||"?").toUpperCase())}</span><span class="grow"><b>${esc(nm)}</b><span class="small muted">Profilo</span></span></button>
   <p class="dsrc">Football data provided by the Football-Data.org API · <a href="termini.html">Termini</a> · <a href="privacy.html">Privacy</a></p></aside>`;
 }
 function vLeave(){return `<div class="scrim" data-act="leaveStay"></div><div class="card modal" role="alertdialog" aria-modal="true" aria-labelledby="lvt"><h2 id="lvt">Pronostici non salvati</h2><p class="small" style="font-family:var(--f-ui)">Hai modificato dei pronostici senza salvarli. Se esci ora le modifiche vanno perse.</p>
@@ -1191,7 +1191,7 @@ function vResults(L){
       const q=oddOf(m,p);const inner=`<span class="rcb">${!p?"–":`<b>${p}</b>${q?`<i>${p===e?"+":""}${q.toFixed(2)}</i>`:""}`}</span>`;
       return `<td class="rc ${cls}${d.m._id===S.uid?" me":""}">${inner}</td>`}).join("")}</tr>`}).join("");
   const foot=`<tr class="tot"><th class="mt" scope="row">Totale</th>${cols.map(d=>`<td class="rc${d.m._id===S.uid?" me":""}"><span class="rcb"><b>${f2(d.pts)}</b><i>${d.pos}°</i></span></td>`).join("")}</tr>`;
-  html+=`<div class="seg resord" role="group" aria-label="Ordine delle colonne"><button type="button" class="segb" data-act="resOrder" data-o="gen" aria-pressed="${ord!=="day"}">Classifica generale</button><button type="button" class="segb" data-act="resOrder" data-o="day" aria-pressed="${ord==="day"}">Classifica di giornata</button></div>`;
+  html+=`<div class="fld"><p class="flabel" id="resord-l">Ordine di visualizzazione</p><div class="seg resord" role="group" aria-labelledby="resord-l"><button type="button" class="segb" data-act="resOrder" data-o="gen" aria-pressed="${ord!=="day"}">Classifica generale</button><button type="button" class="segb" data-act="resOrder" data-o="day" aria-pressed="${ord==="day"}">Classifica di giornata</button></div></div>`;
   html+=`<section class="card"><div class="tbl rmx"><table><thead><tr><th class="mt">Partita</th>${head}</tr></thead><tbody>${rows}</tbody><tfoot>${foot}</tfoot></table></div>
    ${ONLINE&&B.pkRounds&&!B.pkRounds.has(r.n)?`<p class="small muted" style="font-family:var(--f-ui)">Carico le schedine della giornata…</p>`:""}<p class="small muted rlegend"><span class="lg"><span class="rc won"><b>1</b></span>Corretto</span><span class="lg"><span class="rc lost"><b>1</b></span>Sbagliato</span><span class="lg"><span class="rc wait"><b>1</b></span>In corso</span></p></section>`;
   return html;
