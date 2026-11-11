@@ -1,0 +1,9 @@
+// Configurazione Cloudflare: sito statico, nessun codice lato server.
+// I file esclusi dalla pubblicazione sono elencati in .assetsignore.
+{
+  "name": "totofanta",
+  "compatibility_date": "2026-06-01",
+  "assets": {
+    "directory": "."
+  }
+}
