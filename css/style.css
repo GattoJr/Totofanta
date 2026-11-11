@@ -975,3 +975,5 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .ppnote{gap:10px}
 .ppnote .chip{margin-right:4px}
 .adm-m .pprow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sharebtn{display:flex;align-items:center;justify-content:center;gap:8px}
+.sharebtn svg{width:20px;height:20px}

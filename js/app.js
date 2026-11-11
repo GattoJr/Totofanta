@@ -758,6 +758,10 @@ const ACT={
     if(nick.length<2||nick.length>20)return toast("Il nickname deve avere da 2 a 20 caratteri");
     if(me&&nick===me.nick)return toast("Il nickname è già questo");
     safe(async()=>{await B.setNickname(nick);S.nickEdit=null;toast("Nickname aggiornato")})},
+  /* Invita amici (11/11): condivisione del telefono con il messaggio pronto; dove non c'è, il messaggio si copia */
+  shareInvite:async()=>{const L=league();if(!L)return;const text=inviteText(L);
+    if(navigator.share){try{await navigator.share({title:`Unisciti a “${L.name}” su TotoFanta`,text});return}catch(e){if(e&&e.name==="AbortError")return}}
+    try{await navigator.clipboard.writeText(text);toast("Messaggio d'invito copiato: incollalo dove vuoi")}catch{prompt("Copia il messaggio d'invito:",text)}},
   copyLink:async()=>{const L=league();if(!L)return;const url=inviteUrl(L);try{await navigator.clipboard.writeText(url);toast("Link d'invito copiato")}catch{prompt("Copia il link d'invito:",url)}},
   // ---- admin
   approve:d=>safe(async()=>{await B.approve(S.members.find(x=>x._id===d.u));toast("Giocatore approvato")}),
@@ -886,6 +890,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&(S.drawer||S.modal|
 
 /* ===================== Icone ===================== */
 const I={
+  share:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>`,
   book:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 12h5"/></svg>`,
   logout:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>`,
   plus:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
@@ -1352,6 +1357,11 @@ function mpCard(rows,cls){
 }
 
 /* ---- Lega: regolamento, invito, partecipanti ---- */
+/* testo dell'invito: lega, link, password (solo privata), giornata di partenza e scadenza delle iscrizioni */
+function inviteText(L){const pw=L.type==="private"?S.leaguePw[L._id]:null;
+  const ks=fixturesOf(L.startRound).filter(f=>!f.postponed&&f.kickoff).map(f=>Date.parse(f.kickoff));const k=ks.length?Math.min(...ks):null;
+  return `Ti invito nella mia lega di TotoFanta: “${L.name}” ⚽\n\nEntra da qui 👉 ${inviteUrl(L)}`+(pw?`\nPassword: ${pw}`:"")
+    +`\n\nSi parte ${[8,11].includes(L.startRound)?"dall'":"dalla "}${L.startRound}ª giornata`+(k?`: iscriviti entro ${fmtDow(k)} alle ${fmtTime(k)}.`:".")}
 function vInfo(L){
   const admin=isAdmin();const pend=S.members.filter(m=>m.status==="pending");const pw=S.leaguePw[L._id];
   return `${leagueName(L,admin?`<span class="chip blue lchip">Sei admin di questa lega</span>`:"")}
@@ -1361,7 +1371,9 @@ function vInfo(L){
   <section class="card"><h3>Invita alla tua lega</h3><table class="kv"><tbody>
    <tr><td>Nome</td><td><b>${esc(L.name)}</b></td></tr>
    ${L.type==="private"?`<tr><td>Password</td><td>${pw?`<b class="code">${esc(pw)}</b>`:`<span class="muted">non disponibile${admin?": impostala dal Pannello admin":""}</span>`}</td></tr>`:""}
-   </tbody></table><button class="btn wide" data-act="copyLink">Copia link</button></section>
+   </tbody></table>${(()=>{const closed=calRoundStarted(L.startRound);
+    return `<button class="btn wide sharebtn" data-act="shareInvite" ${closed?"disabled":""}>${I.share}Invita amici</button><button class="btn wide sec" data-act="copyLink">Copia link</button>
+    <p class="small muted" style="font-family:var(--f-ui)">${closed?"La lega è già iniziata: le iscrizioni sono chiuse.":"Si apre la condivisione del telefono (WhatsApp, Telegram, Messaggi…) con il messaggio già scritto."}</p>`})()}</section>
   <section class="card"><h3>Regolamento lega</h3><table class="kv"><tbody>
    <tr><td>Privacy</td><td>${L.type==="private"?"Lega Privata":"Lega Pubblica"}</td></tr>
    <tr><td>Modalità</td><td>Quote</td></tr>
