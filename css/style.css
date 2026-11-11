@@ -719,8 +719,8 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .mtr.me{background:var(--blue-soft);border-radius:8px;font-weight:700}
 .mtr b{font-variant-numeric:tabular-nums}
 @media (min-width:1024px){
-  body.hasside{padding-left:260px}
-  .dside{display:flex;flex-direction:column;gap:4px;position:fixed;top:0;bottom:0;left:0;width:260px;box-sizing:border-box;overflow-y:auto;background:var(--card);border-right:1px solid var(--line);padding:22px 14px 14px;z-index:20}
+  body.hasside{padding-left:320px}
+  .dside{display:flex;flex-direction:column;gap:4px;position:fixed;top:0;bottom:0;left:0;width:320px;box-sizing:border-box;overflow-y:auto;background:var(--card);border-right:1px solid var(--line);padding:22px 14px 14px;z-index:20}
   .dside .sbrand{font-family:var(--f-disp);font-style:italic;font-weight:800;font-size:34px;line-height:1;margin:0 0 14px;padding:0 10px}
   .dside .sbrand .bf{color:var(--brand-accent)}
   .dside .lswitch,.dside button.lswitch{background:var(--field);border:1px solid var(--line);color:var(--ink);margin:0 0 8px}
