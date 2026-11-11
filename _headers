@@ -1,0 +1,10 @@
+# Intestazioni di sicurezza servite da Cloudflare (valgono per tutte le pagine).
+# La stessa politica (CSP) resta anche nel <meta> di index.html e admin.html.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src 'self' https://cmjdfhkmzrfuukgeudet.supabase.co wss://cmjdfhkmzrfuukgeudet.supabase.co https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+/admin*
+  X-Robots-Tag: noindex, nofollow

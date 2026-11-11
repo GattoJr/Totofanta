@@ -32,7 +32,7 @@ supabase/reset.sql    azzera il database (cancella tutto lo schema public)
 3. New query: incolla `supabase/calendario-2026-27.sql` › Run.
 4. Amministratore del sito:
    `insert into public.site_admins select id from auth.users where email = 'TUA-EMAIL';`
-5. Authentication › URL Configuration: Site URL `https://gattojr.github.io/Totofanta/`; in Redirect URLs `https://gattojr.github.io/Totofanta/**` (copre anche `admin.html`).
+5. Authentication › URL Configuration: Site URL `https://totofanta.tototips.workers.dev/`; in Redirect URLs `https://totofanta.tototips.workers.dev/**` (copre anche `admin`).
 6. Per i test: Authentication › Sign In / Providers › Email › disattiva *Confirm email* (il servizio email gratuito di Supabase invia pochissime mail all'ora).
 
 Regole principali garantite dal database:
@@ -55,3 +55,7 @@ Con `js/config.js` compilato il sito usa Supabase (login con email e password, d
 - Quote e risultati automatici da un servizio esterno (API).
 - Modalità Punteggi fissi e Risultati esatti.
 - Competizioni parallele (Miglior giornata, Battle Royale, Sopravvissuto).
+
+## Pubblicazione (dall'11/11/2026)
+
+Il sito è servito da Cloudflare Workers (static assets): https://totofanta.tototips.workers.dev — si pubblica da solo a ogni push su `main`. Configurazione in `wrangler.jsonc`, file esclusi in `.assetsignore`, intestazioni di sicurezza in `_headers`. Il vecchio indirizzo GitHub Pages (ramo `gh-pages`) rimanda al nuovo, conservando i link d'invito (`#lega=…`).
