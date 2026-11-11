@@ -873,15 +873,22 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .rmx td.rc b{font-size:14px;font-weight:800}
 .rmx td.rc i{font-size:10.5px;font-weight:600}
 .rmx td.rc.won .rcb{background:var(--win-soft);color:var(--win)}
-.rmx td.rc.lost .rcb{color:var(--muted)}
-.rmx td.rc.lost b{opacity:1}
-.rmx td.rc.lost i{text-decoration:line-through}
 .rmx td.rc.me:not(.won) .rcb{background:var(--blue-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--blue) 30%,transparent)}
 .rmx tbody th.mt{padding:6px 8px}
 .rmx .mtt{font-family:var(--f-ui);font-size:13px;font-weight:700}
 .rmx tfoot td,.rmx tfoot th{border-top:2px solid var(--line)}
 .rmx tfoot td.rc b{font-size:14px}
 .rmx tfoot td.rc.me .rcb b{color:var(--blue-text)}
-.rlegend .rc{width:26px;height:26px;border-radius:8px;border:0;background:var(--field)}
-.rlegend .rc.won{background:var(--win-soft)}
-.rlegend .rc.lost{color:var(--muted);background:var(--field)}
+.rmx td.rc.lost .rcb{color:var(--lose)}
+.rmx td.rc.lost b{opacity:.75}
+.rmx td.rc.lost i{color:var(--muted)}
+/* Risultati (11/11): colonne dei giocatori tutte larghe uguali; i nomi lunghi finiscono con i puntini, toccando la testa si vede il nome intero */
+
+.rmx th.mt{width:108px;min-width:108px}
+.rmx th.pc,.rmx td.rc{width:64px;min-width:64px;max-width:64px}
+.rmx .pcb{display:block;width:100%;border:0;background:none;padding:0;font:inherit;color:inherit;cursor:pointer}
+.rmx .pnm{max-width:58px}
+/* ordine delle colonne */
+.resord{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border-radius:12px;background:var(--field);border:1px solid var(--line)}
+.resord .segb{min-height:40px;border:0;border-radius:9px;background:none;font:600 13px var(--f-ui);color:var(--muted);cursor:pointer}
+.resord .segb[aria-pressed=true]{background:var(--card);color:var(--blue-text);font-weight:700;box-shadow:0 1px 3px rgba(13,24,48,.15)}

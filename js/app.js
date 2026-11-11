@@ -702,6 +702,9 @@ const ACT={
   },
   leaveSave:async()=>{const next=S.leave?.next;const rs=S.rounds.filter(r=>pickChanges(r).length);S.leave=null;
     for(const r of rs){if(!await ACT.savePicks({r:r._id}))return}S.draft={};next&&next()},
+  /* Risultati: nome intero di una colonna (i nomi lunghi sono tagliati) e ordine delle colonne */
+  showNick:d=>toast(d.n),
+  resOrder:d=>{S.resOrder=d.o;lsSet("totofanta-res-order",d.o);render()},
   leaveDiscard:()=>{const next=S.leave?.next;S.leave=null;S.draft={};next&&next()},
   leaveStay:()=>{S.leave=null;render()},
   openProfile:()=>{S.prof={nicks:null,pw:"",pw2:"",del:"",edit:{}};if(S.screen!=="profilo")go("profilo");else render();B.myNicknames().then(n=>{if(S.prof){S.prof.nicks=n;render()}}).catch(e=>toast(itMsg(e)))},
@@ -1130,8 +1133,6 @@ function vPicks(L){
   if(list.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${list.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
   if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
   const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=!roundLocked(r);
-  if(anyOpen&&ONLINE){const ts=r.matches.map(m=>S.odds[m.id]?.at).filter(Boolean).sort();const last=ts[ts.length-1];
-    html+=`<p class="small muted oddsnote">Quote provvisorie: si aggiornano fino al fischio d'inizio della prima partita e i punti si calcolano su quelle finali${last?` · ultima variazione ${fmtStamp(last)}`:""}</p>`}
   html+=`<div class="pcols"><div class="pmatch">`+r.matches.map(m=>{
     const locked=roundLocked(r);const started=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
@@ -1177,9 +1178,12 @@ function vResults(L){
      della scheda Classifica); la riga Totale resta con punti e posizione della giornata */
   const gen=computeStandings(L,S.members,S.rounds,S.picks);const gpos={};gen.forEach((g,i)=>{gpos[g.uid]=i});
   const byGen=pl.slice().sort((a,b)=>((gpos[a.m._id]??1e9)-(gpos[b.m._id]??1e9))||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
-  const cols=me?[me,...byGen.filter(d=>d!==me)]:byGen;
+  /* ordine delle colonne (11/11): classifica generale o classifica della giornata; la mia colonna resta la prima */
+  const ord=S.resOrder||lsGet("totofanta-res-order")||"gen";
+  const sorted=ord==="day"?pl:byGen;
+  const cols=me?[me,...sorted.filter(d=>d!==me)]:sorted;
 
-  const head=cols.map(d=>`<th class="pc${d.m._id===S.uid?" me":""}" title="${esc(d.m.nick)}"><span class="pav">${esc((d.m.nick||"?").trim().charAt(0).toUpperCase())}</span><span class="pnm">${d===me?"Tu":esc(d.m.nick)}</span></th>`).join("");
+  const head=cols.map(d=>`<th class="pc${d.m._id===S.uid?" me":""}"><button type="button" class="pcb" data-act="showNick" data-n="${esc(d.m.nick)}" title="${esc(d.m.nick)}" aria-label="${esc(d.m.nick)}"><span class="pav" aria-hidden="true">${esc((d.m.nick||"?").trim().charAt(0).toUpperCase())}</span><span class="pnm" aria-hidden="true">${d===me?"Tu":esc(d.m.nick)}</span></button></th>`).join("");
   const rows=r.matches.map(m=>{const e=esito(m);const started=matchLocked(r,m);
     const state=e?`<b>${m.hg}-${m.ag}</b> · ${e} ${oddOf(m,e)?oddOf(m,e).toFixed(2):""}`:started?`<span class="live">In corso</span>`:`${m.kickoff?fmtDow(m.kickoff)+" · "+fmtTime(m.kickoff):"da giocare"}`;
     return `<tr><th class="mt" scope="row"><span class="mtt">${esc(abbr(m.home))}–${esc(abbr(m.away))}</span><span class="mts">${state}</span></th>${cols.map(d=>{const p=d.pk[m.id];
@@ -1187,6 +1191,7 @@ function vResults(L){
       const q=oddOf(m,p);const inner=`<span class="rcb">${!p?"–":`<b>${p}</b>${q?`<i>${p===e?"+":""}${q.toFixed(2)}</i>`:""}`}</span>`;
       return `<td class="rc ${cls}${d.m._id===S.uid?" me":""}">${inner}</td>`}).join("")}</tr>`}).join("");
   const foot=`<tr class="tot"><th class="mt" scope="row">Totale</th>${cols.map(d=>`<td class="rc${d.m._id===S.uid?" me":""}"><span class="rcb"><b>${f2(d.pts)}</b><i>${d.pos}°</i></span></td>`).join("")}</tr>`;
+  html+=`<div class="seg resord" role="group" aria-label="Ordine delle colonne"><button type="button" class="segb" data-act="resOrder" data-o="gen" aria-pressed="${ord!=="day"}">Classifica generale</button><button type="button" class="segb" data-act="resOrder" data-o="day" aria-pressed="${ord==="day"}">Classifica di giornata</button></div>`;
   html+=`<section class="card"><div class="tbl rmx"><table><thead><tr><th class="mt">Partita</th>${head}</tr></thead><tbody>${rows}</tbody><tfoot>${foot}</tfoot></table></div>
    ${ONLINE&&B.pkRounds&&!B.pkRounds.has(r.n)?`<p class="small muted" style="font-family:var(--f-ui)">Carico le schedine della giornata…</p>`:""}<p class="small muted rlegend"><span class="lg"><span class="rc won"><b>1</b></span>Corretto</span><span class="lg"><span class="rc lost"><b>1</b></span>Sbagliato</span><span class="lg"><span class="rc wait"><b>1</b></span>In corso</span></p></section>`;
   return html;
