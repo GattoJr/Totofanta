@@ -449,7 +449,7 @@ const B=ONLINE?Online:Local;
    del browser cambiano schermata invece di uscire dal sito. Menu laterale, finestre e aiuti aggiungono un passo
    alla cronologia, così Indietro li chiude. Nessun ricaricamento: cambia solo la parte dopo "#".
    Gli indirizzi #lega=<nome> (inviti) e quelli di accesso di Supabase non vengono toccati. */
-const ROUTES=["home","pronostici","classifica","risultati","calendario","statistiche","impostazioni","profilo","lega","admin","leghe","create","regole"];
+const ROUTES=["home","pronostici","classifica","risultati","calendario","statistiche","impostazioni","profilo","lega","admin","leghe","create","regole","contatti"];
 const ROUTE_NAME={create:"crea",admin:"lega/admin",regole:"come-si-gioca"};
 function routeHash(){
   const sc=S.screen;if(!ROUTES.includes(sc)||sc==="home")return "#/";
@@ -762,6 +762,7 @@ const ACT={
   shareInvite:async()=>{const L=league();if(!L)return;const text=inviteText(L);
     if(navigator.share){try{await navigator.share({title:`Unisciti a “${L.name}” su TotoFanta`,text});return}catch(e){if(e&&e.name==="AbortError")return}}
     try{await navigator.clipboard.writeText(text);toast("Messaggio d'invito copiato: incollalo dove vuoi")}catch{prompt("Copia il messaggio d'invito:",text)}},
+  copyMail:async()=>{try{await navigator.clipboard.writeText(CONTACT_EMAIL);toast("Indirizzo email copiato")}catch{prompt("Copia l'indirizzo email:",CONTACT_EMAIL)}},
   copyLink:async()=>{const L=league();if(!L)return;const url=inviteUrl(L);try{await navigator.clipboard.writeText(url);toast("Link d'invito copiato")}catch{prompt("Copia il link d'invito:",url)}},
   // ---- admin
   approve:d=>safe(async()=>{await B.approve(S.members.find(x=>x._id===d.u));toast("Giocatore approvato")}),
@@ -890,6 +891,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&(S.drawer||S.modal|
 
 /* ===================== Icone ===================== */
 const I={
+  mail:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></svg>`,
   share:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>`,
   book:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 12h5"/></svg>`,
   logout:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>`,
@@ -919,9 +921,9 @@ function render(){
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
   if(ADMIN_PAGE)return renderAdminPage(needLogin);
   /* intestazione (8/11): logo solo in Home (con Pronostici) e nelle schede Classifica e Risultati; nelle altre pagine il loro nome */
-  const title=bareTitle()||({create:"Crea una lega",calendario:"Calendario",profilo:"Profilo",statistiche:"Statistiche",impostazioni:"Impostazioni",regole:"Come si gioca",leghe:"Le mie leghe",lega:"Lega",admin:"Pannello admin"}[S.screen])||"TotoFanta";
+  const title=bareTitle()||({create:"Crea una lega",calendario:"Calendario",profilo:"Profilo",statistiche:"Statistiche",impostazioni:"Impostazioni",regole:"Come si gioca",contatti:"Contatti",leghe:"Le mie leghe",lega:"Lega",admin:"Pannello admin"}[S.screen])||"TotoFanta";
   const bare=needLogin||recovery||S.boot||!S.authReady;
-  const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",impostazioni:"home",regole:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
+  const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",impostazioni:"home",regole:"home",contatti:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
   const leftBtn=bare?"<span></span>":(backTo?`<button class="iconbtn" data-act="${S.screen==="regole"?"rulesBack":"go"}" data-s="${backTo}" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
@@ -934,6 +936,7 @@ function render(){
   else if(S.screen==="statistiche")body=vStats();
   else if(S.screen==="impostazioni")body=vSettings();
   else if(S.screen==="regole")body=vRules();
+  else if(S.screen==="contatti")body=vContacts();
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
@@ -1007,7 +1010,8 @@ function sideLinks(){return `
    <div class="grp">Serie A</div>
    <button class="dl" data-act="openCal">${I.cal}Calendario</button>
    <div class="grp">App</div>
-   <button class="dl" data-act="go" data-s="impostazioni">${I.cog}Impostazioni</button>`}
+   <button class="dl" data-act="go" data-s="impostazioni">${I.cog}Impostazioni</button>
+   <button class="dl" data-act="go" data-s="contatti">${I.mail}Contatti</button>`}
 /* menu laterale del PC: logo, profilo (in alto come sul telefono, 11/11), lega, sezioni della lega (con Pronostici), poi le voci del menu */
 function vSide(){
   const L=league();const me=myMember();const cur=S.screen==="admin"?"lega":S.screen;
@@ -1305,6 +1309,15 @@ function roundChart(st){
    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Punti per giornata">${`<line x1="0" x2="${W}" y1="${H-pad}" y2="${H-pad}" class="sbase"/>`}${bars}</svg></div>`;
 }
 
+/* ---- Contatti (11/11): per ora solo l'email dell'amministratore ---- */
+const CONTACT_EMAIL="totofanta.admin@gmail.com";
+function vContacts(){
+  return `<section class="card"><h3>Scrivici</h3><p class="small" style="font-family:var(--f-ui)">Per segnalare un problema, proporre un'idea o chiedere aiuto con la tua lega, scrivi all'amministratore del sito.</p>
+   <div class="mailrow">${I.mail}<b>${CONTACT_EMAIL}</b></div>
+   <a class="btn wide sharebtn" href="mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("TotoFanta")}">${I.mail}Scrivi un'email</a>
+   <button class="btn wide sec" data-act="copyMail">Copia indirizzo</button>
+   <p class="small muted" style="font-family:var(--f-ui)">Se segnali un problema, indica la lega, la schermata e, se puoi, allega uno screenshot.</p></section>`;
+}
 /* ---- Come si gioca (11/11): regole della modalità Quote, in breve ---- */
 function vRules(){
   const sec=(t,b)=>`<section class="card rules"><h3>${t}</h3>${b}</section>`;

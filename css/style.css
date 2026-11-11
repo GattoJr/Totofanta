@@ -977,3 +977,7 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .adm-m .pprow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .sharebtn{display:flex;align-items:center;justify-content:center;gap:8px}
 .sharebtn svg{width:20px;height:20px}
+/* Contatti (11/11) */
+.mailrow{display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;background:var(--field);font-family:var(--f-ui);word-break:break-all}
+.mailrow svg{width:20px;height:20px;flex:none;color:var(--blue)}
+a.btn{text-decoration:none}
