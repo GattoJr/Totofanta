@@ -310,6 +310,7 @@ const Online={
     await this.refresh();
   },
   async recomputeScores(){this.check(await this.sb.rpc("recompute_scores"))},
+  async siteStats(){return this.check(await this.sb.rpc("site_stats"))},
   async setOddsAuto(id){this.check(await this.sb.from("odds").update({manual:false}).eq("fixture_id",id));await this.refresh()},
   async acceptAlert(a){
     if(a.blocking&&a.c1)this.check(await this.sb.from("odds").upsert({fixture_id:a.fixture_id,o1:a.c1,ox:a.cx,o2:a.c2,manual:false,source:"api"},{onConflict:"fixture_id"}));
@@ -767,6 +768,9 @@ const ACT={
   admAuto:d=>safe(async()=>{await B.setOddsAuto(+d.id);toast("Quota di nuovo automatica: si aggiorna al prossimo giro")}),
   admAlert:d=>{const a=S.oddsAlerts.find(x=>x.fixture_id===+d.id);if(!a)return;safe(async()=>{await B.acceptAlert(a);S.admEdit=null;toast(a.blocking?"Quota proposta applicata":"Avviso archiviato")})},
   admScores:()=>safe(async()=>{await B.recomputeScores();toast("Punti ricalcolati")}),
+  admTab:d=>{S.admTab=d.v==="stats"?"stats":"partite";render();if(S.admTab==="stats"&&!S.siteStats)ACT.admStats()},
+  admStats:()=>{if(!ONLINE||!B.siteStats)return;S.siteStats={...(S.siteStats||{}),loading:true,err:""};render();
+    B.siteStats().then(d=>{S.siteStats={data:d,loading:false,err:""};render()}).catch(e=>{S.siteStats={...(S.siteStats||{}),loading:false,err:itMsg(e)};render()})},
   admSync:()=>safe(async()=>{const r=await B.syncOdds();S.admEdit=null;toast(`Quote aggiornate: ${r.updated} partite${r.alerts?.length?` · ${r.alerts.length} avvisi`:""}${r.remaining!=null?` · crediti rimasti ${r.remaining}`:""}`)}),
   admSim:()=>{const now=Date.now();let k=0;for(const f of fixturesOf(S.admN)){const e=S.admEdit?.e[f.id];if(!e)continue;const t=e.k?+new Date(e.k):NaN;
     if(!isNaN(t)&&t<=now&&e.hg===""&&e.ag===""){const x=Math.random();const[h,a]=sampleScore(x<.45?"1":x<.72?"X":"2");e.hg=String(h);e.ag=String(a);k++}}
@@ -1382,9 +1386,81 @@ function oddsCard(){
 /* punti salvati: il database li ricalcola da solo; il pulsante serve solo come verifica manuale */
 function scoresCard(){return `<section class="card"><div class="row"><h3 class="grow">Punti delle leghe</h3><button class="btn sm sec" data-act="admScores" ${S.busy?"disabled":""}>Ricalcola</button></div>
   <p class="small muted" style="font-family:var(--f-ui)">I punti si ricalcolano da soli a ogni risultato, quota o pubblicazione modificati, e di nuovo ogni notte. "Ricalcola" rifà il conto di tutte le giornate di tutte le leghe.</p></section>`}
+/* ---- statistiche globali del sito (v22, 11/11): una sola chiamata a site_stats() ---- */
+function vSiteStats(){
+  if(!ONLINE)return `<section class="card"><p class="center small muted" style="font-family:var(--f-ui)">Le statistiche del sito si vedono solo con il sito collegato al database.</p></section>`;
+  const X=S.siteStats;
+  if(!X)setTimeout(()=>{if(!S.siteStats&&S.admTab==="stats")ACT.admStats()},0);
+  if(!X||(!X.data&&X.loading))return `<div class="empty">Caricamento…</div>`;
+  if(!X.data)return `<section class="card"><p class="err">${esc(X.err||"Statistiche non disponibili")}</p><button class="btn wide sec" data-act="admStats">Riprova</button></section>`;
+  const D=X.data,U=D.users||{},Lg=D.leagues||{},P=D.picks||{},Y=D.system||{},N=D.next;
+  const pct=(a,b)=>b?Math.round(a*100/b)+"%":"–";const num=x=>x==null?"–":String(x);const pts=x=>x==null?"–":Number(x).toFixed(2);
+  const tile=(v,l,t)=>`<div class="stile"${t?` title="${esc(t)}"`:""}><b>${v}</b><span>${l}</span></div>`;
+  const when=iso=>iso?fmtStamp(iso):"mai";
+  const card=(title,body,extra="")=>`<section class="card"><div class="row"><h3 class="grow">${title}</h3>${extra}</div>${body}</section>`;
+  let h=`<div class="row"><span class="grow small muted" style="font-family:var(--f-ui)">Aggiornate ${fmtStamp(D.generated_at)}</span><button class="btn sm sec" data-act="admStats" ${X.loading?"disabled":""}>${X.loading?"Aggiorno…":"Aggiorna"}</button></div>`;
+  if(X.err)h+=`<p class="err">${esc(X.err)}</p>`;
+  // utenti
+  h+=card("Utenti",`<div class="sgrid sg3">${tile(num(U.total),"Registrati")}${tile(num(U.active_today),"Attivi oggi")}${tile(num(U.active7),"Attivi 7 giorni")}
+    ${tile(num(U.active30),"Attivi 30 giorni")}${tile(num(U.new7),"Nuovi 7 giorni",`Oggi: ${U.new_today||0} · 30 giorni: ${U.new30||0}`)}${tile(num(U.returning7),"Tornati","Attivi sia questa settimana sia la precedente")}
+    ${tile(num(U.active_hour),"Ultima ora","Con il sito aperto nell'ultima ora circa")}${tile(num(U.no_league),"Senza lega","Registrati ma non iscritti a nessuna lega")}${tile(num(U.multi_league),"In più leghe")}</div>
+    ${actChart(D.activity||[])}
+    <p class="small muted" style="font-family:var(--f-ui)">Attivo = ha aperto il sito quel giorno (il conteggio si aggiorna ogni 15 minuti). Gli account amministratori del sito non sono contati.</p>`);
+  // prossima giornata
+  if(N){const e=N.eligible||0;const w=x=>e?(x*100/e).toFixed(1):0;
+    h+=card(`${N.n}ª giornata`,`<p class="small" style="font-family:var(--f-ui)">Prima partita <b>${fmtStamp(N.kickoff)}</b> · ${N.published?`<span class="chip ok">Quote pubblicate</span>`:`<span class="chip warn">Quote in arrivo</span>`}</p>
+     <div class="stack" role="img" aria-label="Schedine: ${N.complete} complete, ${N.partial} parziali, ${N.none} assenti su ${e}"><i class="c" style="width:${w(N.complete)}%"></i><i class="p" style="width:${w(N.partial)}%"></i></div>
+     <div class="sgrid sg3">${tile(`${N.complete}/${e}`,"Schedine complete")}${tile(num(N.partial),"Parziali")}${tile(num(N.none),"Non ancora giocate")}</div>
+     <p class="small muted" style="font-family:var(--f-ui)">Contano tutti gli iscritti delle leghe che giocano questa giornata.</p>`)}
+  // leghe
+  const ls=Lg.list||[];
+  h+=card("Leghe",`<div class="sgrid sg3">${tile(num(Lg.total),"Leghe",`Private ${Lg.private||0} · pubbliche ${Lg.public||0}`)}${tile(num(Lg.members),"Iscrizioni")}${tile(Lg.total?(Lg.members/Lg.total).toFixed(1):"–","Iscritti per lega")}</div>
+    ${ls.length?`<div class="tbl"><table class="stbl ltbl"><thead><tr><th>Lega</th><th class="n">Iscr.</th><th class="n">Attivi</th><th class="n">${D.next_round?D.next_round+"ª":"Pross."}</th></tr></thead><tbody>
+    ${ls.map(l=>`<tr><td><b>${esc(l.name)}</b><span class="sub">${l.type==="private"?"Privata":"Pubblica"} · admin ${esc(l.admin||"–")} · dalla ${l.start_round}ª${l.leader?` · in testa ${esc(l.leader.nick)} (${pts(l.leader.pts)})`:""}</span></td>
+      <td class="n">${l.members}</td><td class="n">${l.active7}</td><td class="n">${l.next_plays?`${l.next_complete}/${l.members}`:"–"}</td></tr>`).join("")}</tbody></table></div>
+    <p class="small muted" style="font-family:var(--f-ui)">Iscr.: iscritti. Attivi: iscritti che hanno aperto il sito negli ultimi 7 giorni. ${D.next_round?D.next_round+"ª":"Ultima colonna"}: schedine complete della prossima giornata. Nuove leghe negli ultimi 7 giorni: ${Lg.new7||0}.</p>`:`<p class="small muted" style="font-family:var(--f-ui)">Nessuna lega.</p>`}`);
+  // giornate giocate
+  const rs=D.rounds||[];
+  if(rs.length)h+=card("Giornate giocate",`<div class="tbl"><table class="stbl rtbl"><thead><tr><th>Giornata</th><th class="n">Gioc.</th><th class="n">Corr.</th><th class="n">Media</th></tr></thead><tbody>
+    ${rs.map(r=>`<tr><td><b>${r.n}ª</b>${r.finished<10?` <span class="small muted">${r.finished}/10</span>`:""}${r.best?`<span class="sub">Migliore: ${esc(r.best.nick)} ${pts(r.best.pts)} · ${esc(r.best.league)}</span>`:""}</td>
+      <td class="n">${r.players}/${r.eligible}</td><td class="n">${pct(r.correct||0,r.evaluated||0)}</td><td class="n">${pts(r.avg_pts)}</td></tr>`).join("")}</tbody></table></div>
+    <p class="small muted" style="font-family:var(--f-ui)">Gioc.: iscritti con almeno un pronostico, su quelli che giocavano la giornata. Corr.: esiti indovinati sulle partite finite. Media: punti medi per giocatore.</p>`);
+  // pronostici
+  const tp=P.total||0;const sp=k=>tp?(P[k]*100/tp).toFixed(1):0;
+  h+=card("Pronostici",`<div class="sgrid sg3">${tile(num(tp),"Inseriti")}${tile(num(P.evaluated),"Valutati")}${tile(pct(P.correct||0,P.evaluated||0),"Corretti")}</div>
+    ${tp?`<div class="signs"><div class="stack sg" role="img" aria-label="Segni giocati: 1 ${P.p1}, X ${P.px}, 2 ${P.p2}"><i class="s1" style="width:${sp("p1")}%"></i><i class="sx" style="width:${sp("px")}%"></i><i class="s2" style="width:${sp("p2")}%"></i></div>
+    <div class="legend small"><span><i class="s1"></i>1 · ${pct(P.p1,tp)}</span><span><i class="sx"></i>X · ${pct(P.px,tp)}</span><span><i class="s2"></i>2 · ${pct(P.p2,tp)}</span></div></div>`:""}`);
+  // sistema
+  const dbp=Y.db_limit_mb?Math.min(100,Y.db_mb*100/Y.db_limit_mb):0;const lo=Y.last_odds,lc=Y.last_calendar;
+  const okc=(o,txt)=>o?(o.ok?`<span class="chip ok">${txt}</span>`:`<span class="chip bad">con errori</span>`):`<span class="chip">mai</span>`;
+  h+=card("Sistema",`<div class="sysrow"><span class="grow">Database</span><b>${Y.db_mb} MB su ${Y.db_limit_mb} MB</b></div><div class="stack"><i class="c" style="width:${dbp.toFixed(1)}%"></i></div>
+    <div class="sysrow"><span class="grow">Calendario e risultati: ${when(lc?.at)}</span>${okc(lc,"ok")}</div>
+    <div class="sysrow"><span class="grow">Quote: ${when(lo?.at)}${lo?.remaining!=null?` · crediti rimasti <b>${lo.remaining}</b>`:""}</span>${okc(lo,"ok")}</div>
+    <div class="sysrow"><span class="grow">Sincronizzazioni fallite (7 giorni)</span><span class="chip ${Y.sync_errors7?"warn":"ok"}">${Y.sync_errors7||0}</span></div>
+    <div class="sysrow"><span class="grow">Attività programmate fallite (7 giorni)</span><span class="chip ${Y.cron_errors7?"warn":"ok"}">${Y.cron_errors7||0}</span></div>
+    <div class="sysrow"><span class="grow">Avvisi sulle quote</span><span class="chip ${Y.odds_alerts?"warn":"ok"}">${Y.odds_alerts||0}</span></div>
+    <p class="small muted" style="font-family:var(--f-ui)">Traffico del sito: Cloudflare › Workers &amp; Pages › totofanta › Metrics. Consumi del database: Supabase › Usage. Backup: GitHub › Actions.</p>`);
+  return h;
+}
+/* utenti attivi per giorno (ultimi 30, dal primo giorno con attività) */
+function actChart(a){
+  let i0=a.findIndex(x=>x.active||x.new);if(i0<0)return "";i0=Math.max(0,Math.min(i0,a.length-7));const ds=a.slice(i0);
+  const max=Math.max(...ds.map(x=>x.active),1);const W=320,H=120,pad=18,step=(W-8)/ds.length,bw=Math.max(3,Math.min(18,step-3));
+  const lab=d=>{const [y,m,g]=d.split("-");return `${g}/${m}`};
+  const bars=ds.map((x,i)=>{const h=Math.max(x.active?3:0,Math.round((H-pad-14)*x.active/max));const bx=4+i*step+(step-bw)/2;const y=H-pad-h;const last=i===ds.length-1;
+    const show=last||i===0||(ds.length>10?i%7===0&&i<ds.length-3:true);
+    return `<g class="sbar${last?" best":""}"><title>${lab(x.d)}: ${x.active} attivi${x.new?`, ${x.new} nuovi`:""}</title><rect x="${bx}" y="0" width="${bw}" height="${H-pad}" fill="transparent"/>${h?`<path d="M${bx},${H-pad}V${y+Math.min(3,h)}a${Math.min(3,bw/2)},${Math.min(3,h)} 0 0 1 ${Math.min(3,bw/2)},${-Math.min(3,h)}h${Math.max(0,bw-2*Math.min(3,bw/2))}a${Math.min(3,bw/2)},${Math.min(3,h)} 0 0 1 ${Math.min(3,bw/2)},${Math.min(3,h)}V${H-pad}Z"/>`:""}
+      ${x.new?`<circle cx="${bx+bw/2}" cy="${y-6}" r="2.6" class="snew"/>`:""}${show?`<text x="${bx+bw/2}" y="${H-4}" text-anchor="middle" class="slab">${lab(x.d)}</text>`:""}</g>`}).join("");
+  return `<div class="schart"><div class="row"><b class="grow">Utenti attivi per giorno</b><span class="small muted"><i class="dotnew"></i> giorno con nuovi utenti</span></div>
+   <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Utenti attivi per giorno"><line x1="0" x2="${W}" y1="${H-pad}" y2="${H-pad}" class="sbase"/>${bars}</svg></div>`;
+}
 function vPanel(){
   let html=`<h2 class="pagetitle">Pannello amministratore</h2>
-  <p class="tip">${ONLINE?"Quello che salvi qui vale subito per tutte le leghe.":"Modalità prova: le modifiche restano in questo browser."} Poteri attivi: <b>orari</b>, <b>quote</b> e <b>risultati</b> delle partite, <b>pubblicazione</b> delle giornate.</p>`+(ONLINE?oddsCard()+scoresCard():"");
+  <p class="tip">${ONLINE?"Quello che salvi qui vale subito per tutte le leghe.":"Modalità prova: le modifiche restano in questo browser."} Poteri attivi: <b>orari</b>, <b>quote</b> e <b>risultati</b> delle partite, <b>pubblicazione</b> delle giornate.</p>`;
+  const tab=S.admTab||(S.admTab=ONLINE?"stats":"partite");
+  html+=`<div class="admtabs" role="tablist" aria-label="Sezioni del pannello"><button type="button" role="tab" aria-selected="${tab==="stats"}" data-act="admTab" data-v="stats">Statistiche</button><button type="button" role="tab" aria-selected="${tab!=="stats"}" data-act="admTab" data-v="partite">Partite e quote</button></div>`;
+  if(tab==="stats")return html+vSiteStats();
+  html+=ONLINE?oddsCard()+scoresCard():"";
   if(!S.fixtures.length)return html+noCalendar();
   const n=S.admN||(S.admN=adminDefaultRound());const fs=fixturesOf(n);
   if(!S.admEdit||S.admEdit.n!==n){S.admEdit={n,e:{}};for(const f of fs)S.admEdit.e[f.id]=admBase(f)}
