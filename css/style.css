@@ -806,26 +806,40 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 /* bollini delle squadre piccoli e pieni (Prossimi incontri e Pronostici) */
 .crest.sm{width:24px;height:24px;border:0;font-size:8px;font-weight:800;letter-spacing:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)}
 
-/* Pronostici: card della partita con selettore 1·X·2 a tre posizioni */
-.match{padding:10px 12px 12px;gap:8px}
-.mhead{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
-.mteams{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14px;white-space:nowrap;min-width:0}
-.mscore{font-weight:800;font-variant-numeric:tabular-nums;background:var(--field);border-radius:8px;padding:1px 7px}
-.mhead .mdate{font-size:12px;white-space:nowrap}
-.seg3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border-radius:14px;background:var(--field)}
-.seg3 .pk{width:auto;height:44px;flex-direction:row;gap:6px;border:0;border-radius:10px;background:transparent;color:var(--ink);box-shadow:none}
-.seg3 .pk .s{font-family:var(--f-ui);font-weight:800;font-size:14px}
-.seg3 .pk .o{font-size:13px;font-weight:600;color:var(--muted)}
-.seg3 .pk:hover:not(:disabled):not(.sel){background:var(--card)}
-.seg3 .pk.sel{background:var(--blue);color:#fff;box-shadow:0 2px 6px rgba(13,24,48,.18)}
-.seg3 .pk.sel .o{color:#fff}
-.seg3 .pk.res{box-shadow:inset 0 0 0 2px var(--win)}
-.seg3 .pk.sel.won{background:var(--win);color:var(--win-ink,#fff);box-shadow:none}
-.seg3 .pk.sel.won .o{color:var(--win-ink,#fff)}
-.seg3 .pk.sel.lost{background:var(--lose-soft);color:var(--lose);box-shadow:inset 0 0 0 1.5px var(--lose)}
-.seg3 .pk.sel.lost .o{color:var(--lose)}
-.seg3 .pk:disabled:not(.sel):not(.res){opacity:.55}
-.match .verdict{margin-top:-2px}
+/* Pronostici (11/11, come il riferimento): stemmi ai lati con il nome sotto, data e ora al centro, tre riquadri con il segno sopra la quota */
+.match{padding:14px 12px 12px;gap:12px}
+.mvs{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px}
+.mside{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;text-align:center}
+.mside .tn{font-weight:700;font-size:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crest.md{width:40px;height:40px;border:0;font-size:10.5px;font-weight:800;letter-spacing:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)}
+.mmid{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:72px;text-align:center;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.mmid b{font-size:17px;font-weight:700;color:var(--ink)}
+.mmid .mres{font-size:24px;font-weight:800;line-height:1.1;letter-spacing:-.01em}
+.mmid .live{color:var(--warn);font-weight:700}
+.odds3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.odds3 .pk{width:auto;height:58px;flex-direction:column;gap:3px;border:1px solid transparent;border-radius:12px;background:var(--field);color:var(--ink);box-shadow:none}
+.odds3 .pk .s{font-family:var(--f-ui);font-weight:600;font-size:14px;color:var(--muted)}
+.odds3 .pk .o{font-family:var(--f-ui);font-size:17px;font-weight:800;color:var(--ink)}
+.odds3 .pk:hover:not(:disabled):not(.sel){border-color:var(--blue)}
+.odds3 .pk.sel{background:var(--blue);border-color:var(--blue)}
+.odds3 .pk.sel .s{color:rgba(255,255,255,.85)}
+.odds3 .pk.sel .o{color:#fff}
+.odds3 .pk.res{border:2px solid var(--win)}
+.odds3 .pk.sel.won{background:var(--win);border-color:var(--win)}
+.odds3 .pk.sel.won .s,.odds3 .pk.sel.won .o{color:var(--win-ink,#fff)}
+.odds3 .pk.sel.lost{background:var(--lose-soft);border-color:var(--lose)}
+.odds3 .pk.sel.lost .s,.odds3 .pk.sel.lost .o{color:var(--lose)}
+.odds3 .pk:disabled:not(.sel):not(.res){opacity:.55}
+.match .verdict{margin-top:-4px}
+
+/* Salva (11/11): pillola che compare solo con qualcosa da salvare */
+.savepill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--nav-h) + 30px + env(safe-area-inset-bottom,0px));z-index:16;display:flex;align-items:center;gap:12px;padding:6px 6px 6px 18px;border-radius:999px;background:var(--ink);color:var(--bg);box-shadow:0 10px 24px rgba(8,14,28,.30);white-space:nowrap;font-family:var(--f-ui);animation:pillin .18s ease-out}
+.savepill .spl{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.savepill .btn{min-height:40px;height:40px;padding:0 16px;border-radius:999px;font-size:14px;font-weight:800;gap:6px}
+.savepill .btn svg{width:16px;height:16px}
+@keyframes pillin{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (prefers-reduced-motion:reduce){.savepill{animation:none}}
+@media (min-width:1024px){.paside .savepill{position:static;transform:none;justify-content:space-between;animation:none}}
 
 /* Classifica come nel mockup: niente fascia colorata in testa, posizioni in quadratini arrotondati, la tua riga evidenziata */
 .rankcard{padding:6px}
@@ -841,3 +855,33 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .rank .posb,.rank .posb.p2,.rank .posb.p3{min-width:28px;height:28px;border-radius:10px;font-family:var(--f-ui);font-size:13px;font-weight:800;background:var(--field);color:var(--ink);box-shadow:none}
 .rank .posb.p1{background:var(--blue);color:#fff}
 .rankcard .adjlist{margin:4px 8px 6px}
+
+/* Risultati (11/11): solo la grafica della tabella */
+.rmx table{border-collapse:separate;border-spacing:0}
+.rmx th,.rmx td{border-left:0}
+.rmx thead th{background:none;color:var(--muted);border-top:0}
+.rmx thead th.mt{font-size:11.5px;font-weight:700;text-transform:none;letter-spacing:0;vertical-align:bottom;background:var(--card)}
+.rmx thead th.pc{vertical-align:bottom;padding:8px 4px 6px}
+.rmx thead th.pc.me{background:none;color:var(--blue-text)}
+.rmx .pav{display:grid;place-items:center;width:28px;height:28px;margin:0 auto 4px;border-radius:50%;background:var(--field);color:var(--ink);font-size:12px;font-weight:800;box-shadow:inset 0 0 0 1px var(--line)}
+.rmx th.pc.me .pav{background:var(--blue);color:#fff;box-shadow:none}
+.rmx .pnm{font-size:11px;font-weight:600}
+.rmx td{border-top:1px solid var(--line)}
+.rmx td.rc{padding:3px;background:none}
+.rmx td.rc.won,.rmx td.rc.me:not(.won){background:none}
+.rmx .rcb{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:40px;border-radius:10px;line-height:1.1}
+.rmx td.rc b{font-size:14px;font-weight:800}
+.rmx td.rc i{font-size:10.5px;font-weight:600}
+.rmx td.rc.won .rcb{background:var(--win-soft);color:var(--win)}
+.rmx td.rc.lost .rcb{color:var(--muted)}
+.rmx td.rc.lost b{opacity:1}
+.rmx td.rc.lost i{text-decoration:line-through}
+.rmx td.rc.me:not(.won) .rcb{background:var(--blue-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--blue) 30%,transparent)}
+.rmx tbody th.mt{padding:6px 8px}
+.rmx .mtt{font-family:var(--f-ui);font-size:13px;font-weight:700}
+.rmx tfoot td,.rmx tfoot th{border-top:2px solid var(--line)}
+.rmx tfoot td.rc b{font-size:14px}
+.rmx tfoot td.rc.me .rcb b{color:var(--blue-text)}
+.rlegend .rc{width:26px;height:26px;border-radius:8px;border:0;background:var(--field)}
+.rlegend .rc.won{background:var(--win-soft)}
+.rlegend .rc.lost{color:var(--muted);background:var(--field)}

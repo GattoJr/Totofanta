@@ -1136,12 +1136,15 @@ function vPicks(L){
     const locked=roundLocked(r);const started=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
       return `<button class="${cls}" ${locked?"disabled":""} data-act="pick" data-r="${r._id}" data-m="${m.id}" data-p="${k}" aria-pressed="${sel}" aria-label="${esc(m.home)}–${esc(m.away)}: ${k}, quota ${o?o.toFixed(2):"non disponibile"}"><span class="s">${k}</span><span class="o">${o?o.toFixed(2):"—"}</span></button>`};
+    const mid=e?`<b class="mres">${m.hg}–${m.ag}</b><span>Finale</span>`:started?`<span class="live">In corso</span><span>${fmtTime(m.kickoff)}</span>`:m.kickoff?`<span>${fmtDow(m.kickoff)}</span><b>${fmtTime(m.kickoff)}</b>`:`<span>${m.day?fmtDow(m.day):"—"}</span><b>da definire</b>`;
     const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(started?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
-    return `<section class="card match"><div class="mhead"><span class="mteams" title="${esc(m.home)}–${esc(m.away)}">${crest(m.home,"sm")}${e?`<span>${abbr(m.home)}</span><b class="mscore">${m.hg}–${m.ag}</b><span>${abbr(m.away)}</span>`:`<span>${abbr(m.home)}–${abbr(m.away)}</span>`}${crest(m.away,"sm")}</span><span class="mdate">${fmtDow(m.kickoff)} · ${fmtTime(m.kickoff)}</span></div><div class="seg3">${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("")+`</div><div class="paside">`;
+    return `<section class="card match"><div class="mvs"><span class="mside">${crest(m.home,"md")}<span class="tn">${esc(m.home)}</span></span><span class="mmid">${mid}</span><span class="mside">${crest(m.away,"md")}<span class="tn">${esc(m.away)}</span></span></div><div class="odds3">${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("")+`</div><div class="paside">`;
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary${roundLocked(r)?"":" two"}"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div>${roundLocked(r)?`<div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div>`:`<div><b>${f2(potential)}</b><span>Punteggio massimo</span></div>`}</div>
   <p class="small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
-  if(anyOpen)html+=`<div class="savebar"><span class="small">${dirty?"Modifiche da salvare":"Nessuna modifica da salvare"}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":"Salva"}</button></div>`;
+  if(anyOpen&&dirty){const first=!Object.keys(savedPicks(r._id)).length;
+    const lbl=first?`${done}/${r.matches.length} pronostici`:`${dirty} ${dirty===1?"modifica":"modifiche"}`;
+    html+=`<div class="savepill" role="status"><span class="spl">${lbl}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Salva`}</button></div>`}
   return html+`</div></div>`;
 }
 function vOthers(r){
@@ -1176,14 +1179,14 @@ function vResults(L){
   const byGen=pl.slice().sort((a,b)=>((gpos[a.m._id]??1e9)-(gpos[b.m._id]??1e9))||a.m.nick.localeCompare(b.m.nick,"it",{sensitivity:"base"}));
   const cols=me?[me,...byGen.filter(d=>d!==me)]:byGen;
 
-  const head=cols.map(d=>`<th class="pc${d.m._id===S.uid?" me":""}" title="${esc(d.m.nick)}"><span class="pnm">${d===me?"Tu":esc(d.m.nick)}</span></th>`).join("");
+  const head=cols.map(d=>`<th class="pc${d.m._id===S.uid?" me":""}" title="${esc(d.m.nick)}"><span class="pav">${esc((d.m.nick||"?").trim().charAt(0).toUpperCase())}</span><span class="pnm">${d===me?"Tu":esc(d.m.nick)}</span></th>`).join("");
   const rows=r.matches.map(m=>{const e=esito(m);const started=matchLocked(r,m);
     const state=e?`<b>${m.hg}-${m.ag}</b> · ${e} ${oddOf(m,e)?oddOf(m,e).toFixed(2):""}`:started?`<span class="live">In corso</span>`:`${m.kickoff?fmtDow(m.kickoff)+" · "+fmtTime(m.kickoff):"da giocare"}`;
     return `<tr><th class="mt" scope="row"><span class="mtt">${esc(abbr(m.home))}–${esc(abbr(m.away))}</span><span class="mts">${state}</span></th>${cols.map(d=>{const p=d.pk[m.id];
       const cls=!p?"none":!e?"wait":p===e?"won":"lost";
-      const q=oddOf(m,p);const inner=!p?"–":`<b>${p}</b>${q?`<i>${p===e?"+":""}${q.toFixed(2)}</i>`:""}`;
+      const q=oddOf(m,p);const inner=`<span class="rcb">${!p?"–":`<b>${p}</b>${q?`<i>${p===e?"+":""}${q.toFixed(2)}</i>`:""}`}</span>`;
       return `<td class="rc ${cls}${d.m._id===S.uid?" me":""}">${inner}</td>`}).join("")}</tr>`}).join("");
-  const foot=`<tr class="tot"><th class="mt" scope="row">Totale</th>${cols.map(d=>`<td class="rc${d.m._id===S.uid?" me":""}"><b>${f2(d.pts)}</b><i>${d.pos}°</i></td>`).join("")}</tr>`;
+  const foot=`<tr class="tot"><th class="mt" scope="row">Totale</th>${cols.map(d=>`<td class="rc${d.m._id===S.uid?" me":""}"><span class="rcb"><b>${f2(d.pts)}</b><i>${d.pos}°</i></span></td>`).join("")}</tr>`;
   html+=`<section class="card"><div class="tbl rmx"><table><thead><tr><th class="mt">Partita</th>${head}</tr></thead><tbody>${rows}</tbody><tfoot>${foot}</tfoot></table></div>
    ${ONLINE&&B.pkRounds&&!B.pkRounds.has(r.n)?`<p class="small muted" style="font-family:var(--f-ui)">Carico le schedine della giornata…</p>`:""}<p class="small muted rlegend"><span class="lg"><span class="rc won"><b>1</b></span>Corretto</span><span class="lg"><span class="rc lost"><b>1</b></span>Sbagliato</span><span class="lg"><span class="rc wait"><b>1</b></span>In corso</span></p></section>`;
   return html;
