@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
 
   // --- calendario, quote attuali e giornate
   const [fx, od, cr] = await Promise.all([
-    db.from("fixtures").select("id,n,home,away,kickoff,day"),
+    db.from("fixtures").select("id,n,home,away,kickoff,day,postponed"),
     db.from("odds").select("fixture_id,o1,ox,o2,manual,source"),
     db.from("calendar_rounds").select("n,published"),
   ]);
@@ -98,12 +98,15 @@ Deno.serve(async (req) => {
   const fixtures = fx.data!;
   const oddsBy = new Map(od.data!.map((o) => [o.fixture_id, o]));
   const now = Date.now();
+  // chiusura della giornata: prima partita non rinviata (regola dell'11/11)
   const firstKick = new Map<number, number>();
-  for (const f of fixtures) if (f.kickoff) {
+  for (const f of fixtures) if (f.kickoff && !f.postponed) {
     const t = Date.parse(f.kickoff);
     if (!firstKick.has(f.n) || t < firstKick.get(f.n)!) firstKick.set(f.n, t);
   }
   const roundStarted = (n: number) => firstKick.has(n) && firstKick.get(n)! <= now;
+  // quota ferma: rinviata dal suo calcio d'inizio (senza data resta aperta), le altre dalla chiusura della giornata
+  const fixtureLocked = (f: any) => f.postponed ? (f.kickoff != null && Date.parse(f.kickoff) <= now) : roundStarted(f.n);
 
   const teams = [...new Set(fixtures.map((f) => f.home))];
   const teamOf = (name: string): string | null => {
@@ -118,6 +121,8 @@ Deno.serve(async (req) => {
     const t = Date.parse(iso);
     return fixtures.find((f) => {
       if (f.home !== home || f.away !== away) return false;
+      // una rinviata senza nuova data: basta la coppia di squadre (in casa/fuori è unica nella stagione)
+      if (f.postponed && !f.kickoff) return true;
       const ref = f.kickoff ? Date.parse(f.kickoff) : f.day ? Date.parse(f.day + "T12:00:00Z") : NaN;
       return !isNaN(ref) && Math.abs(ref - t) <= 36 * 3600e3;
     });
@@ -131,7 +136,7 @@ Deno.serve(async (req) => {
     const f = home && away ? fixtureOf(home, away, ev.commence_time) : undefined;
     if (!f) { unmatched.push({ home: ev.home_team, away: ev.away_team, at: ev.commence_time }); continue; }
     const label = `${f.n}ª ${f.home}–${f.away}`;
-    if (roundStarted(f.n)) { skipped.push({ match: label, why: "giornata iniziata" }); continue; }
+    if (fixtureLocked(f)) { skipped.push({ match: label, why: f.postponed ? "recupero iniziato" : "giornata iniziata" }); continue; }
     const cur = oddsBy.get(f.id);
     if (cur?.manual) { skipped.push({ match: label, why: "quota manuale" }); continue; }
 
@@ -203,7 +208,7 @@ Deno.serve(async (req) => {
     for (const r of cr.data!) {
       if (r.published || roundStarted(r.n)) continue;
       const fs = fixtures.filter((f) => f.n === r.n);
-      if (fs.length === 10 && fs.every((f) => f.kickoff && have.has(f.id))) {
+      if (fs.length === 10 && fs.every((f) => f.postponed || (f.kickoff && have.has(f.id)))) {
         const { error } = await db.from("calendar_rounds").update({ published: true }).eq("n", r.n);
         if (error) failed.push({ step: `pubblica ${r.n}`, error: error.message }); else published.push(r.n);
       }

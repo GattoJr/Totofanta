@@ -949,10 +949,29 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
   .admtop>.card{margin:0}
   .admlist .adm-h{display:grid;grid-template-columns:minmax(0,1.4fr) 210px 230px 124px minmax(0,1fr);gap:12px;padding:0 0 8px;border-bottom:1px solid var(--line);font:600 12px var(--f-ui);color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
   .admlist .adm-m{grid-template-columns:minmax(0,1.4fr) 210px 230px 124px minmax(0,1fr);gap:4px 12px;padding:8px 0}
-  .admlist .adm-m .t{grid-column:1;grid-row:1/3}
-  .admlist .adm-m .k{grid-column:2;grid-row:1/3}
-  .admlist .adm-m .od{grid-column:3;grid-row:1/3}
-  .admlist .adm-m .sc{grid-column:4;grid-row:1/3}
+  .admlist .adm-m .t{grid-column:1;grid-row:1/4}
+  .admlist .adm-m .k{grid-column:2;grid-row:1/4}
+  .admlist .adm-m .od{grid-column:3;grid-row:1/4}
+  .admlist .adm-m .sc{grid-column:4;grid-row:1/4}
   .admlist .adm-m .st{grid-column:5;align-self:center;line-height:1.3}
-  .admlist .adm-m .st:nth-child(5):last-child{grid-row:1/3}
 }
+/* pronostici (11/11): riquadri 1·X·2 più staccati dal riquadro della partita */
+:root{--pk-bg:#E8EEFA;--pk-line:#C3D0EA}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--pk-bg:#1F2D4D;--pk-line:#34497A}}
+:root[data-theme="dark"]{--pk-bg:#1F2D4D;--pk-line:#34497A}
+.odds3 .pk{background:var(--pk-bg);border:1.5px solid var(--pk-line)}
+.odds3 .pk:hover:not(:disabled):not(.sel){border-color:var(--blue);background:var(--blue-soft)}
+.odds3 .pk.sel{border-color:var(--blue)}
+.odds3 .pk.res{border:2px solid var(--win)}
+.fieldbtn .selwrap{flex:1;min-width:0}
+/* Come si gioca (11/11) */
+.rules p,.rules li{font-family:var(--f-ui);font-size:15px;line-height:1.5}
+.rules ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+.rules li::marker{color:var(--blue)}
+.rex{display:flex;flex-direction:column;gap:4px;padding:12px;border-radius:12px;background:var(--blue-soft);font-family:var(--f-ui)}
+.rex b{font-variant-numeric:tabular-nums}
+/* partite rinviate (11/11) */
+.ppt{font-weight:700;color:var(--warn)}
+.ppnote{gap:10px}
+.ppnote .chip{margin-right:4px}
+.adm-m .pprow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}

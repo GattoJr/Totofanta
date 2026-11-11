@@ -156,9 +156,11 @@ const Local={
   async leagueType(name){return LocalStore.list("leagues").find(l=>l.nameKey===(name||"").trim().toLowerCase())?.type||null},
   // calendario: accoppiamenti da js/calendario.js, orari modificati salvati nel browser
   fixturesFrom(docs){const ov={};for(const d of docs)ov[d._id]=d;S.odds={};
-    S.fixtures=(window.CALENDARIO_SERIE_A||[]).map(([n,pos,home,away,kickoff,day])=>{const id=n*100+pos;const o=ov[id];if(o?.o1)S.odds[id]={o1:o.o1,oX:o.oX,o2:o.o2};return{id,n,pos,home,away,kickoff:o&&"kickoff" in o?o.kickoff:kickoff,day,hg:o?.hg??null,ag:o?.ag??null}})},
+    S.fixtures=(window.CALENDARIO_SERIE_A||[]).map(([n,pos,home,away,kickoff,day])=>{const id=n*100+pos;const o=ov[id];if(o?.o1)S.odds[id]={o1:o.o1,oX:o.oX,o2:o.o2};return{id,n,pos,home,away,kickoff:o&&"kickoff" in o?o.kickoff:kickoff,day,hg:o?.hg??null,ag:o?.ag??null,postponed:!!o?.postponed}})},
   roundsFrom(docs){S.calRounds={};for(const d of docs)if(d.published)S.calRounds[+d._id]=true},
-  async saveFixtures(changes){for(const c of changes)await LocalStore.set(`calendar/${c.id}`,{kickoff:c.kickoff,hg:c.hg,ag:c.ag,o1:c.o1,oX:c.oX,o2:c.o2})},
+  async saveFixtures(changes){for(const c of changes){const prev=LocalStore.data[`calendar/${c.id}`]||{};await LocalStore.set(`calendar/${c.id}`,{kickoff:c.kickoff,hg:c.hg,ag:c.ag,o1:c.o1,oX:c.oX,o2:c.o2,postponed:!!prev.postponed})}},
+  async setPostponed(id,v){const f=fixtureById(id);const prev=LocalStore.data[`calendar/${id}`]||{};const o=S.odds[id]||{};
+    await LocalStore.set(`calendar/${id}`,{kickoff:v&&f.kickoff&&Date.parse(f.kickoff)<=Date.now()?null:f.kickoff,hg:f.hg,ag:f.ag,o1:o.o1??prev.o1,oX:o.oX??prev.oX,o2:o.o2??prev.o2,postponed:v})},
   async setPublished(n,v){await LocalStore.set(`calrounds/${n}`,{published:v})},
 };
 function saveLocalUsers(){lsSet("totofanta-local-users",JSON.stringify(S.localUsers));lsSet("totofanta-local-cur",S.uid)}
@@ -271,7 +273,7 @@ const Online={
   putFx(x){this.fx.set(x.id,x);if(!this.fxMax||Date.parse(x.updated_at)>Date.parse(this.fxMax))this.fxMax=x.updated_at},
   putOd(x){this.od.set(x.fixture_id,x);if(!this.odMax||Date.parse(x.updated_at)>Date.parse(this.odMax))this.odMax=x.updated_at},
   calApply(){
-    S.fixtures=[...this.fx.values()].sort((a,b)=>a.id-b.id).map(x=>({id:x.id,n:x.n,pos:x.pos,home:x.home,away:x.away,kickoff:x.kickoff||null,day:x.day,hg:x.hg??null,ag:x.ag??null}));
+    S.fixtures=[...this.fx.values()].sort((a,b)=>a.id-b.id).map(x=>({id:x.id,n:x.n,pos:x.pos,home:x.home,away:x.away,kickoff:x.kickoff||null,day:x.day,hg:x.hg??null,ag:x.ag??null,postponed:!!x.postponed}));
     /* le quote di una giornata ritirata non si mostrano più (tranne all'admin del sito) */
     S.odds={};for(const [id,x] of this.od)if(S.siteAdmin||S.calRounds[Math.floor(id/100)])S.odds[id]={o1:Number(x.o1),oX:Number(x.ox),o2:Number(x.o2),manual:!!x.manual,source:x.source,at:x.updated_at};
   },
@@ -310,6 +312,9 @@ const Online={
     await this.refresh();
   },
   async recomputeScores(){this.check(await this.sb.rpc("recompute_scores"))},
+  /* partita rinviata (11/11): se il calcio d'inizio è già passato si toglie, così il pronostico riapre fino alla nuova data */
+  async setPostponed(id,v){const f=fixtureById(id);const up={postponed:v};if(v&&f?.kickoff&&Date.parse(f.kickoff)<=Date.now())up.kickoff=null;
+    const d=this.check(await this.sb.from("fixtures").update(up).eq("id",id).select("id"));if(!d.length)throw new Error("Non hai i permessi di amministratore");await this.refresh()},
   async siteStats(){return this.check(await this.sb.rpc("site_stats"))},
   async setOddsAuto(id){this.check(await this.sb.from("odds").update({manual:false}).eq("fixture_id",id));await this.refresh()},
   async acceptAlert(a){
@@ -352,8 +357,11 @@ const Online={
   /* pronostici di tutti per una giornata già iniziata (prima del fischio il database non li mostra) */
   async needRound(n){
     const r=S.rounds.find(x=>x.n===n);const k=r&&firstKick(r);const lid=S.lid;
-    if(!lid||!k||Date.now()<k+5000||this.pkRounds.has(n)||this.pkLoading.has(n))return;
-    this.pkLoading.add(n);
+    if(!lid||!k||Date.now()<k+5000)return;
+    /* una partita rinviata iniziata dopo l'ultimo scaricamento: i pronostici altrui ora sono leggibili */
+    if(this.pkRounds.has(n)&&r.matches.some(m=>{const t=m.postponed&&Date.parse(m.kickoff);return t&&t+5000<=Date.now()&&t>(this.pkAt?.[n]||0)}))this.pkRounds.delete(n);
+    if(this.pkRounds.has(n)||this.pkLoading.has(n))return;
+    this.pkLoading.add(n);(this.pkAt||(this.pkAt={}))[n]=Date.now();
     const {data,error}=await this.sb.from("picks").select("member_id,fixture_id,pick").eq("league_id",lid).gte("fixture_id",n*100+1).lte("fixture_id",n*100+10);
     this.pkLoading.delete(n);
     if(S.lid!==lid)return;if(error){console.warn(error);return}
@@ -441,8 +449,8 @@ const B=ONLINE?Online:Local;
    del browser cambiano schermata invece di uscire dal sito. Menu laterale, finestre e aiuti aggiungono un passo
    alla cronologia, così Indietro li chiude. Nessun ricaricamento: cambia solo la parte dopo "#".
    Gli indirizzi #lega=<nome> (inviti) e quelli di accesso di Supabase non vengono toccati. */
-const ROUTES=["home","pronostici","classifica","risultati","calendario","statistiche","impostazioni","profilo","lega","admin","leghe","create"];
-const ROUTE_NAME={create:"crea",admin:"lega/admin"};
+const ROUTES=["home","pronostici","classifica","risultati","calendario","statistiche","impostazioni","profilo","lega","admin","leghe","create","regole"];
+const ROUTE_NAME={create:"crea",admin:"lega/admin",regole:"come-si-gioca"};
 function routeHash(){
   const sc=S.screen;if(!ROUTES.includes(sc)||sc==="home")return "#/";
   let h="#/"+(ROUTE_NAME[sc]||sc);
@@ -456,6 +464,7 @@ function parseRoute(h){
   const parts=m[1].split("/").filter(Boolean);if(!parts.length)return{screen:"home"};
   if(parts[0]==="lega")return{screen:parts[1]==="admin"?"admin":"lega"};
   if(parts[0]==="crea")return{screen:"create"};
+  if(parts[0]==="come-si-gioca")return{screen:"regole"};
   if(!ROUTES.includes(parts[0]))return{screen:"home"};
   const n=+parts[1];return{screen:parts[0],n:n>=1&&n<=38?n:null};
 }
@@ -477,6 +486,8 @@ function applyRoute(r){
   if(r.screen==="calendario")S.calN=r.n||S.calN||nextCalendarRound();
   if(r.screen==="risultati")S.resN=r.n||null;
   if(r.screen==="pronostici"&&r.n)S.roundSel=r.n;
+  /* Crea lega aperta dall'indirizzo (ricarica su #/crea): modulo con la giornata di inizio già scelta */
+  if(r.screen==="create"&&!(S.form&&S.form.start))S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?(firstOpenRound()||38):1),nick:"",logo:null};
   if(r.screen==="statistiche"&&S.screen!=="statistiche"){S.stats=null}
   if(r.screen==="profilo"&&S.screen!=="profilo"){S.prof=null}
   if(r.screen!==S.screen)go(r.screen);else render();
@@ -518,7 +529,8 @@ function pickDefaultLeague(){
   if(lid!==S.lid)selectLeague(lid);
 }
 function selectLeague(lid){
-  S.lid=lid;S.roundSel=null;S.draft={};S.nickEdit=null;S.members=[];S.rounds=[];S.picks=[];S.scores=ONLINE?[]:null;S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
+  /* al primo caricamento si tiene la giornata scelta dall'indirizzo (#/pronostici/n) */
+  const first=!S.lid;S.lid=lid;if(!first)S.roundSel=null;S.draft={};S.nickEdit=null;S.members=[];S.rounds=[];S.picks=[];S.scores=ONLINE?[]:null;S.showOthers=false;S.loaded={members:false,rounds:false,picks:false};
   if(lid)lsSet("totofanta-last-lid:"+S.uid,lid);
   B.openLeague(lid);render();
 }
@@ -526,7 +538,7 @@ function selectLeague(lid){
 function savedPicks(rId){return pickDoc(rId,S.uid)?.picks||{}}
 function draftPicks(r){return S.draft[r._id]||savedPicks(r._id)}
 function pickChanges(r){const d=S.draft[r._id];if(!d)return[];const sv=savedPicks(r._id);
-  if(roundLocked(r))return[];return r.matches.filter(m=>(d[m.id]||null)!==(sv[m.id]||null)).map(m=>({m,p:d[m.id]||null}))}
+  return r.matches.filter(m=>!pickLocked(r,m)&&(d[m.id]||null)!==(sv[m.id]||null)).map(m=>({m,p:d[m.id]||null}))}
 function picksDirty(){return S.rounds.some(r=>pickChanges(r).length>0)}
 /* chiede conferma se si lascia la pagina pronostici con modifiche non salvate */
 function guard(next){if(S.screen==="pronostici"&&picksDirty()){S.leave={next};S.drawer=false;render();return true}return false}
@@ -575,12 +587,20 @@ const scoreRow=r=>({mid:r.member_id,n:r.n,pts:r.pts,correct:r.correct,best:r.bes
 function storedScore(n,uid){const m=S.members.find(x=>x._id===uid);const x=m&&S.scores.find(y=>y.mid===m.mid&&y.n===n);return x||{pts:0,correct:0,best:0}}
 /* chiede al backend i pronostici di tutti per la giornata (no-op in prova, dove ci sono già) */
 function needRound(n){if(ONLINE&&B.needRound)B.needRound(n)}
-function oddsComplete(r){return r.matches.length>0&&r.matches.every(m=>m.home&&m.away&&m.o1>1&&m.oX>1&&m.o2>1)}
-function firstKick(r){const ks=r.matches.map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x));return ks.length?Math.min(...ks):null}
+function oddsComplete(r){return r.matches.length>0&&r.matches.every(m=>m.postponed||(m.home&&m.away&&m.o1>1&&m.oX>1&&m.o2>1))}
+/* le partite rinviate non contano per la chiusura della giornata (regola dell'11/11) */
+function firstKick(r){const ks=r.matches.filter(m=>!m.postponed).map(m=>+new Date(m.kickoff)).filter(x=>!isNaN(x));return ks.length?Math.min(...ks):null}
 function roundVisible(r){return !!r.published&&oddsComplete(r)}
 function matchLocked(r,m){const k=+new Date(m.kickoff);return !isNaN(k)&&Date.now()>=k}
 /* la giornata si chiude al fischio d'inizio della sua prima partita: da lì nessun pronostico si cambia */
 function roundLocked(r){const k=firstKick(r);return k!=null&&Date.now()>=k}
+/* pronostico di una partita chiuso? Rinviata: fino al suo nuovo fischio d'inizio (aperta finché la data non c'è). Le altre: alla chiusura della giornata */
+function pickLocked(r,m){if(m.postponed){const k=+new Date(m.kickoff);return !isNaN(k)&&Date.now()>=k}return roundLocked(r)}
+function roundAnyOpen(r){return r.matches.some(m=>!pickLocked(r,m))}
+/* giornata finita a parte le partite rinviate ancora da giocare */
+function roundMainDone(r){const ms=r.matches.filter(m=>!m.postponed);return ms.length>0&&ms.every(m=>esito(m))}
+/* partite rinviate ancora da pronosticare in giornate già chiuse (avviso in Home) */
+function openPostponed(){const out=[];for(const r of S.rounds)if(roundVisible(r)&&roundLocked(r))for(const m of r.matches)if(m.postponed&&!esito(m)&&!pickLocked(r,m))out.push({r,m});return out}
 function roundDone(r){return r.matches.length>0&&r.matches.every(m=>esito(m))}
 function roundStatus(r,L){
   if(roundDone(r))return{t:"Conclusa",c:"ok"};
@@ -598,7 +618,7 @@ function buildRounds(L){
   const pub=Object.keys(S.calRounds).map(Number);
   const last=Math.min(38,Math.max(L.startRound,nextCalendarRound(),...pub));const out=[];
   for(let n=L.startRound;n<=last;n++)out.push({_id:"g"+n,n,published:!!S.calRounds[n],matches:fixturesOf(n).map(f=>{const o=S.odds[f.id]||{};
-    return{id:String(f.id),home:f.home,away:f.away,kickoff:f.kickoff||"",day:f.day||"",o1:o.o1??null,oX:o.oX??null,o2:o.o2??null,hg:f.hg??null,ag:f.ag??null}})});
+    return{id:String(f.id),home:f.home,away:f.away,kickoff:f.kickoff||"",day:f.day||"",postponed:!!f.postponed,o1:o.o1??null,oX:o.oX??null,o2:o.o2??null,hg:f.hg??null,ag:f.ag??null}})});
   return out;
 }
 function adminDefaultRound(){const n=nextCalendarRound(),now=Date.now();const missing=k=>fixturesOf(k).some(f=>f.kickoff&&Date.parse(f.kickoff)<=now&&f.hg==null);return n>1&&!missing(n)&&missing(n-1)?n-1:n}
@@ -606,7 +626,7 @@ function adminDefaultRound(){const n=nextCalendarRound(),now=Date.now();const mi
 function calRoundStarted(n){const now=Date.now();return fixturesOf(n).some(f=>f.kickoff&&Date.parse(f.kickoff)<=now)}
 function firstOpenRound(){for(let n=1;n<=38;n++)if(!calRoundStarted(n))return n;return null}
 function nextCalendarRound(){const now=Date.now();for(let n=1;n<=38;n++){const fs=fixturesOf(n);if(fs.some(f=>{const t=f.kickoff?Date.parse(f.kickoff):Date.parse(f.day+"T23:59");return t>=now}))return n}return 38}
-function currentRound(){const list=S.rounds;if(!list.length)return null;return list.find(r=>!roundDone(r)&&(r.published||r.matches.some(m=>!matchLocked(r,m))))||list[list.length-1]}
+function currentRound(){const list=S.rounds;if(!list.length)return null;return list.find(r=>!roundMainDone(r)&&!roundDone(r)&&(r.published||r.matches.some(m=>!matchLocked(r,m))))||list.find(r=>!roundDone(r)&&r.published)||list[list.length-1]}
 
 /* ===================== Punteggi e classifica ===================== */
 /* Classifica generale.
@@ -655,6 +675,10 @@ const ACT={
   lsPick:d=>{S.lsOpen=false;if(d.lid===S.lid){render();return}if(guard(()=>ACT.lsPick(d)))return;selectLeague(d.lid);go("home");toast(`Lega: ${league()?.name||""}`)},
   closeAll:()=>{S.drawer=false;S.modal=null;S.xfer=null;S.xferLeave=null;S.help=null;S.formErr="";render()},
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
+  /* Come si gioca (11/11): aperta dal menu o dalla finestra Unisciti; dalla finestra, Indietro la riapre con i dati scritti */
+  openPostponed:d=>{S.roundSel=+d.n;go("pronostici")},
+  openRules:d=>{S.rulesBack=d&&d.from==="join"?"join":null;go("regole")},
+  rulesBack:()=>{const j=S.rulesBack==="join";S.rulesBack=null;go("home");if(j){S.modal="join";render()}},
   newLeague:()=>{S.form={name:"",type:"private",pw:"",tiebreak:"best_day",start:String(S.fixtures.length?(firstOpenRound()||38):1),nick:"",logo:null};go("create")},
   joinModal:()=>{S.form={name:"",pw:"",nick:"",fromLink:false};S.formErr="";S.modal="join";S.drawer=false;render()},
   pickLeague:d=>{if(guard(()=>ACT.pickLeague(d)))return;selectLeague(d.lid);go("lega")},
@@ -665,6 +689,8 @@ const ACT={
     if(f.type==="private"&&(f.pw||"").length<6)return err("Scegli una password di almeno 6 caratteri");
     if(myLeagues().filter(L=>L.adminId===S.uid).length>=6)return err("Puoi essere admin di al massimo 6 leghe");
     if(nick.length<2)return err("Scegli il tuo nickname");
+    if(!f.start&&S.fixtures.length)f.start=String(firstOpenRound()||38);
+    if(!+f.start)return err("Scegli la giornata di inizio");
     if(calRoundStarted(+f.start))return err(`La ${f.start}ª giornata è già iniziata: scegli una giornata successiva`);
     S.formErr="";
     await safe(async()=>{const lid=await B.createLeague(f);selectLeague(lid);toast("Lega creata");go("home")});
@@ -687,7 +713,8 @@ const ACT={
   others:()=>{S.showOthers=!S.showOthers;render()},
   pick:d=>{
     const r=S.rounds.find(x=>x._id===d.r);if(!r)return;const m=r.matches.find(x=>x.id===d.m);
-    if(!m||roundLocked(r))return toast("Giornata iniziata: i pronostici sono chiusi");
+    if(m&&!(m.o1>1&&m.oX>1&&m.o2>1))return toast("Quote non ancora disponibili per questa partita");
+    if(!m||pickLocked(r,m))return toast(m&&m.postponed?"Partita iniziata: il pronostico è chiuso":"Giornata iniziata: i pronostici sono chiusi");
     const cur={...draftPicks(r)};if(cur[m.id]===d.p)delete cur[m.id];else cur[m.id]=d.p;
     S.draft[r._id]=cur;render();
   },
@@ -745,6 +772,11 @@ const ACT={
     const name=L.name;safe(async()=>{await B.transferAdmin(L._id,X.pick);await B.leaveLeague();S.modal=null;S.xferLeave=null;S.formErr="";
       selectLeague(null);pickDefaultLeague();go("home");toast(`Hai ceduto il ruolo di admin e abbandonato “${name}”`)})},
   leaveNo:()=>{S.confirm=null;render()},
+  /* Pannello admin (11/11): cedere il ruolo senza uscire dalla lega */
+  giveAdminAsk:()=>{if(!isAdmin()||!S.giveAdmin?.pick)return;S.giveAdmin.ask=true;render()},
+  giveAdminNo:()=>{S.giveAdmin=null;render()},
+  giveAdminOk:()=>{const L=league();const G=S.giveAdmin;if(!L||!G?.pick||!isAdmin())return;const m=S.members.find(x=>(x.mid||x._id)===G.pick);
+    safe(async()=>{await B.transferAdmin(L._id,G.pick);S.giveAdmin=null;if(B.refresh)await B.refresh();go("lega");toast(`${m?m.nick:"Il nuovo admin"} è ora l'admin della lega`)})},
   leaveOk:()=>{if(isAdmin())return;const name=league()?.name||"";safe(async()=>{await B.leaveLeague();S.confirm=null;selectLeague(null);pickDefaultLeague();go("home");toast(`Hai abbandonato la lega “${name}”`)})},
   toggleStatus:()=>{S.showStatus=!S.showStatus;render()},
   reloadStatus:()=>{S.pickStatus=null;render()},
@@ -767,6 +799,9 @@ const ACT={
   admUndo:()=>{S.admEdit=null;S.formErr="";S.admWarnOk=false;render()},
   admAuto:d=>safe(async()=>{await B.setOddsAuto(+d.id);toast("Quota di nuovo automatica: si aggiorna al prossimo giro")}),
   admAlert:d=>{const a=S.oddsAlerts.find(x=>x.fixture_id===+d.id);if(!a)return;safe(async()=>{await B.acceptAlert(a);S.admEdit=null;toast(a.blocking?"Quota proposta applicata":"Avviso archiviato")})},
+  admPost:d=>{const v=d.v==="1";const f=fixtureById(+d.id);if(!f)return;
+    if(v&&!confirm(`Segnare ${f.home}–${f.away} come rinviata? Il pronostico resterà aperto fino al nuovo calcio d'inizio${f.kickoff&&Date.parse(f.kickoff)<=Date.now()?" (l'orario passato viene tolto: inserisci la nuova data quando è nota)":""}.`))return;
+    safe(async()=>{await B.setPostponed(+d.id,v);S.admEdit=null;toast(v?"Partita segnata come rinviata":"Rinvio annullato")})},
   admScores:()=>safe(async()=>{await B.recomputeScores();toast("Punti ricalcolati")}),
   admTab:d=>{S.admTab=d.v==="stats"?"stats":"partite";render();if(S.admTab==="stats"&&!S.siteStats)ACT.admStats()},
   admStats:()=>{if(!ONLINE||!B.siteStats)return;S.siteStats={...(S.siteStats||{}),loading:true,err:""};render();
@@ -798,7 +833,7 @@ const ACT={
   },
   admPub:d=>{const n=S.admN;const v=d.v==="1";
     if(v){if(admDirty())return err("Salva prima le modifiche, poi pubblica");
-      const ok=fixturesOf(n).filter(f=>f.kickoff&&S.odds[f.id]).length;if(ok<10)return err(`Per pubblicare servono orari e quote di tutte le 10 partite (complete: ${ok})`)}
+      const ok=fixturesOf(n).filter(f=>f.postponed||(f.kickoff&&S.odds[f.id])).length;if(ok<10)return err(`Per pubblicare servono orari e quote di tutte le 10 partite (complete: ${ok})`)}
     S.formErr="";safe(async()=>{await B.setPublished(n,v);toast(v?`Quote della ${n}ª giornata pubblicate`:`Pubblicazione della ${n}ª giornata ritirata`)})},
   // ---- modalità prova
   addLocal:()=>{const u={id:"local-"+rid(6),name:"Giocatore "+(S.localUsers.length+1)};S.localUsers.push(u);switchLocal(u.id)},
@@ -838,6 +873,7 @@ app.addEventListener("change",e=>{const t=e.target;
   if(t.id==="who-sel")return switchLocal(t.value);
   if(t.id==="league-sel"){selectLeague(t.value);return}
   if(t.id==="cal-n"){S.calN=+t.value;render();return}
+  if(t.dataset&&t.dataset.giveadmin){S.giveAdmin={pick:t.value,ask:false};render();return}
   if(t.dataset&&t.dataset.xleave&&S.xferLeave){S.xferLeave.pick=t.value;S.formErr="";render();return}
   if(t.dataset&&t.dataset.xfer&&S.xfer){S.xfer.pick[t.dataset.xfer]=t.value;S.formErr="";render();return}
   if(t.id==="st-l"&&S.stats){S.stats.lid=t.value;render();return}
@@ -850,6 +886,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&(S.drawer||S.modal|
 
 /* ===================== Icone ===================== */
 const I={
+  book:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 12h5"/></svg>`,
   logout:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>`,
   plus:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
   enter:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5M15 12H3M14 4h5a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-5"/></svg>`,
@@ -877,10 +914,10 @@ function render(){
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
   if(ADMIN_PAGE)return renderAdminPage(needLogin);
   /* intestazione (8/11): logo solo in Home (con Pronostici) e nelle schede Classifica e Risultati; nelle altre pagine il loro nome */
-  const title=bareTitle()||({create:"Crea una lega",calendario:"Calendario",profilo:"Profilo",statistiche:"Statistiche",impostazioni:"Impostazioni",leghe:"Le mie leghe",lega:"Lega",admin:"Pannello admin"}[S.screen])||"TotoFanta";
+  const title=bareTitle()||({create:"Crea una lega",calendario:"Calendario",profilo:"Profilo",statistiche:"Statistiche",impostazioni:"Impostazioni",regole:"Come si gioca",leghe:"Le mie leghe",lega:"Lega",admin:"Pannello admin"}[S.screen])||"TotoFanta";
   const bare=needLogin||recovery||S.boot||!S.authReady;
-  const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",impostazioni:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
-  const leftBtn=bare?"<span></span>":(backTo?`<button class="iconbtn" data-act="go" data-s="${backTo}" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
+  const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",impostazioni:"home",regole:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
+  const leftBtn=bare?"<span></span>":(backTo?`<button class="iconbtn" data-act="${S.screen==="regole"?"rulesBack":"go"}" data-s="${backTo}" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
   else if(needLogin)body=vLogin();
@@ -891,6 +928,7 @@ function render(){
   else if(S.screen==="calendario")body=vCalendar();
   else if(S.screen==="statistiche")body=vStats();
   else if(S.screen==="impostazioni")body=vSettings();
+  else if(S.screen==="regole")body=vRules();
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
@@ -959,6 +997,7 @@ function sideLinks(){return `
    <div class="grp">Leghe</div>
    <button class="dl" data-act="newLeague">${I.plus}Crea una lega</button><button class="dl" data-act="joinModal">${I.enter}Unisciti a una lega</button><button class="dl" data-act="go" data-s="leghe">${I.league}Le mie leghe</button>
    <div class="grp">Il tuo gioco</div>
+   <button class="dl" data-act="openRules">${I.book}Come si gioca</button>
    <button class="dl" data-act="openStats">${I.stats}Statistiche</button>
    <div class="grp">Serie A</div>
    <button class="dl" data-act="openCal">${I.cal}Calendario</button>
@@ -1017,6 +1056,7 @@ function vJoin(){
   return `<div class="scrim" data-act="closeAll"></div><form class="card modal" role="dialog" aria-modal="true" aria-labelledby="jt" data-submit="join" novalidate>
   <button type="button" class="mclose" data-act="closeAll" aria-label="Chiudi">${I.close}</button>
   <h2 id="jt">Unisciti alla lega</h2>
+  <p class="small muted" style="font-family:var(--f-ui)">Prima volta? <button type="button" class="linkbtn" data-act="openRules" data-from="join">Leggi come si gioca</button></p>
   <label class="flabel" for="jf-name">Nome della lega</label>
   <input type="text" id="jf-name" data-bind="form.name" data-rerender value="${esc(f.name)}" placeholder="Es. Lega del Bar Sport" autocomplete="off">
   ${missing?`<p class="err">Nessuna lega con questo nome: forse è stata rinominata o eliminata.</p>`:""}
@@ -1080,11 +1120,14 @@ function vLeagueScreen(L){
 }
 
 /* ---- Home (2.2 / 2.3 / 2.4) ---- */
+function postponedNote(){const ps=openPostponed();if(!ps.length)return "";
+  return `<section class="card ppnote"><p class="small" style="font-family:var(--f-ui)"><span class="chip warn">Partita rinviata</span> ${ps.map(({r,m})=>`<b>${esc(m.home)}–${esc(m.away)}</b> (${r.n}ª) · ${m.kickoff?`recupero ${fmtDow(m.kickoff)} alle ${fmtTime(m.kickoff)}`:"data da definire"}`).join("; ")}. Puoi pronosticarla fino al suo fischio d'inizio.</p>
+   <button class="btn sec wide" data-act="openPostponed" data-n="${ps[0].r.n}">${ps.some(x=>savedPicks(x.r._id)[x.m.id])?"Modifica il pronostico":"Inserisci il pronostico"}</button></section>`}
 function vHome(L){
   const rows=computeStandings(L,S.members,S.rounds,S.picks);const mine=rows.find(r=>r.uid===S.uid);
   const anyScored=S.rounds.some(r=>r.matches.some(m=>esito(m)));
   const r=currentRound();
-  let html=leagueTitle();
+  let html=leagueTitle()+postponedNote();
   /* riepilogo classifica (2.2): sempre visibile, anche prima dei risultati */
   html+=`<div class="hgrid"><section class="hero">${statusCard(L,r)}</section><div class="hside">`;
   /* riepilogo classifica (2.2): sempre visibile; tutta la card porta alla classifica */
@@ -1131,19 +1174,21 @@ setInterval(()=>{const now=Date.now();let expired=false;document.querySelectorAl
 function vPicks(L){
   const list=S.rounds;
   if(!list.length)return `<section class="card"><p class="cta-title">Nessuna giornata disponibile</p><p class="center small muted">Il calendario non è ancora disponibile.</p></section>`;
-  const r=(S.roundSel!=null&&list.find(x=>x.n===S.roundSel))||currentRound();
+  /* le giornate concluse (tutti i risultati) spariscono da qui: restano in Risultati e Classifica */
+  const open=list.filter(x=>!roundDone(x));
+  const r=(S.roundSel!=null&&open.find(x=>x.n===S.roundSel))||currentRound();
   const vis=roundVisible(r);const st=roundStatus(r,L);
-  const fk=firstKick(r);const sub=roundVisible(r)&&fk&&!roundLocked(r)?`Chiude ${fmtDow(fk)} alle ${fmtTime(fk)}`:roundLocked(r)?"Pronostici chiusi":"";
+  const fk=firstKick(r);const sub=roundVisible(r)&&fk&&!roundLocked(r)?`Chiude ${fmtDow(fk)} alle ${fmtTime(fk)}`:roundLocked(r)?(roundAnyOpen(r)?"Aperte solo le partite rinviate":"Pronostici chiusi"):"";
   let html=`<div class="row pickhead"><button class="iconbtn" data-act="go" data-s="home" aria-label="Indietro alla Home">${I.back}</button><div class="grow phead"><h2 class="disp">${r.n}ª giornata</h2>${sub?`<span class="small muted">${sub}</span>`:""}</div><span class="chip ${st.c}">${st.t}</span></div>`;
-  if(list.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${list.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
+  if(open.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${open.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
   if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
-  const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=!roundLocked(r);
+  const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=roundAnyOpen(r);
   html+=`<div class="pcols"><div class="pmatch">`+r.matches.map(m=>{
-    const locked=roundLocked(r);const started=matchLocked(r,m);const e=esito(m);const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
+    const locked=pickLocked(r,m);const started=matchLocked(r,m);const e=esito(m);const pp=m.postponed&&!e&&!started;const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
       return `<button class="${cls}" ${locked?"disabled":""} data-act="pick" data-r="${r._id}" data-m="${m.id}" data-p="${k}" aria-pressed="${sel}" aria-label="${esc(m.home)}–${esc(m.away)}: ${k}, quota ${o?o.toFixed(2):"non disponibile"}"><span class="s">${k}</span><span class="o">${o?o.toFixed(2):"—"}</span></button>`};
-    const mid=e?`<b class="mres">${m.hg}–${m.ag}</b><span>Finale</span>`:started?`<span class="live">In corso</span><span>${fmtTime(m.kickoff)}</span>`:m.kickoff?`<span>${fmtDow(m.kickoff)}</span><b>${fmtTime(m.kickoff)}</b>`:`<span>${m.day?fmtDow(m.day):"—"}</span><b>da definire</b>`;
-    const verdict=e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(started?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
+    const mid=e?`<b class="mres">${m.hg}–${m.ag}</b><span>Finale</span>`:pp?(m.kickoff?`<span class="ppt">Recupero</span><span>${fmtDow(m.kickoff)}</span><b>${fmtTime(m.kickoff)}</b>`:`<span class="ppt">Rinviata</span><b>da definire</b>`):started?`<span class="live">In corso</span><span>${fmtTime(m.kickoff)}</span>`:m.kickoff?`<span>${fmtDow(m.kickoff)}</span><b>${fmtTime(m.kickoff)}</b>`:`<span>${m.day?fmtDow(m.day):"—"}</span><b>da definire</b>`;
+    const verdict=pp&&roundLocked(r)?`<span class="chip warn">Rinviata · pronostico aperto fino al recupero</span>`:e?(p?(p===e?`<span class="chip ok">+${oddOf(m,p).toFixed(2)} punti</span>`:`<span class="chip bad">0 punti</span>`):`<span class="chip">Nessun pronostico</span>`):(started?`<span class="chip">Iniziata alle ${fmtTime(m.kickoff)} · ${p?"in attesa del risultato":"nessun pronostico"}</span>`:"");
     return `<section class="card match"><div class="mvs"><span class="mside">${crest(m.home,"md")}<span class="tn">${esc(m.home)}</span></span><span class="mmid">${mid}</span><span class="mside">${crest(m.away,"md")}<span class="tn">${esc(m.away)}</span></span></div><div class="odds3">${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("")+`</div><div class="paside">`;
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary${roundLocked(r)?"":" two"}"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div>${roundLocked(r)?`<div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div>`:`<div><b>${f2(potential)}</b><span>Punteggio massimo</span></div>`}</div>
@@ -1190,7 +1235,7 @@ function vResults(L){
 
   const head=cols.map(d=>`<th class="pc${d.m._id===S.uid?" me":""}"><button type="button" class="pcb" data-act="showNick" data-n="${esc(d.m.nick)}" title="${esc(d.m.nick)}" aria-label="${esc(d.m.nick)}"><span class="pav" aria-hidden="true">${esc((d.m.nick||"?").trim().charAt(0).toUpperCase())}</span><span class="pnm" aria-hidden="true">${d===me?"Tu":esc(d.m.nick)}</span></button></th>`).join("");
   const rows=r.matches.map(m=>{const e=esito(m);const started=matchLocked(r,m);
-    const state=e?`<b>${m.hg}-${m.ag}</b> · ${e} ${oddOf(m,e)?oddOf(m,e).toFixed(2):""}`:started?`<span class="live">In corso</span>`:`${m.kickoff?fmtDow(m.kickoff)+" · "+fmtTime(m.kickoff):"da giocare"}`;
+    const state=e?`<b>${m.hg}-${m.ag}</b> · ${e} ${oddOf(m,e)?oddOf(m,e).toFixed(2):""}`:m.postponed&&!started?`<span class="ppt">Rinviata</span>${m.kickoff?" · "+fmtDow(m.kickoff):""}`:started?`<span class="live">In corso</span>`:`${m.kickoff?fmtDow(m.kickoff)+" · "+fmtTime(m.kickoff):"da giocare"}`;
     return `<tr><th class="mt" scope="row"><span class="mtt">${esc(abbr(m.home))}–${esc(abbr(m.away))}</span><span class="mts">${state}</span></th>${cols.map(d=>{const p=d.pk[m.id];
       const cls=!p?"none":!e?"wait":p===e?"won":"lost";
       const q=oddOf(m,p);const inner=`<span class="rcb">${!p?"–":`<b>${p}</b>${q?`<i>${p===e?"+":""}${q.toFixed(2)}</i>`:""}`}</span>`;
@@ -1255,6 +1300,19 @@ function roundChart(st){
    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Punti per giornata">${`<line x1="0" x2="${W}" y1="${H-pad}" y2="${H-pad}" class="sbase"/>`}${bars}</svg></div>`;
 }
 
+/* ---- Come si gioca (11/11): regole della modalità Quote, in breve ---- */
+function vRules(){
+  const sec=(t,b)=>`<section class="card rules"><h3>${t}</h3>${b}</section>`;
+  return sec("In breve",`<p>Ogni giornata di Serie A pronostichi le 10 partite con <b>1</b>, <b>X</b> o <b>2</b>. Se indovini, guadagni tanti punti quanto vale la <b>quota</b> di quel risultato. Vince chi a fine campionato ha più punti nella sua lega.</p>`)
+  +sec("1 · Entra in una lega",`<ul><li><b>Crea una lega</b> e invita gli amici, oppure <b>unisciti</b> a una lega esistente con il suo nome (e la password, se è privata).</li><li>In ogni lega hai un <b>nickname</b>, diverso da quello degli altri iscritti.</li><li>Ogni lega parte da una giornata scelta da chi la crea; dal fischio d'inizio di quella giornata le iscrizioni si chiudono.</li><li>Puoi giocare in più leghe: la schedina è separata per ogni lega.</li></ul>`)
+  +sec("2 · Compila la schedina",`<ul><li>Dalla Home tocca <b>Inserisci i tuoi pronostici</b> e scegli 1, X o 2 per ogni partita.</li><li>Premi <b>Salva</b>: finché non salvi, i pronostici non contano.</li><li>Puoi cambiarli quante volte vuoi fino al <b>fischio d'inizio della prima partita della giornata</b>. Da quel momento la schedina è chiusa per tutte le partite.</li><li>Le schedine degli altri si vedono nella scheda <b>Risultati</b> dal fischio d'inizio della prima partita, mai prima.</li></ul>`)
+  +sec("3 · Le quote",`<ul><li>Sotto ogni segno trovi la quota: più è alta, meno quel risultato è probabile e più punti vale.</li><li>Le quote arrivano dai bookmaker e si aggiornano ogni ora finché la giornata è aperta: fino al primo fischio sono <b>provvisorie</b>.</li><li>Al fischio d'inizio della prima partita le quote si <b>fissano</b>: i punti si calcolano su quelle, uguali per tutti.</li></ul>`)
+  +sec("4 · I punti",`<ul><li>Pronostico giusto: punti pari alla quota del risultato. Pronostico sbagliato o mancante: 0 punti.</li><li>I punti si aggiornano da soli quando arriva il risultato, circa 2 ore dopo il calcio d'inizio.</li></ul>
+    <div class="rex"><span class="small muted">Esempio</span><b>Juventus–Inter</b><span class="small">Quote 1 · <b>2.10</b> &nbsp; X · <b>3.20</b> &nbsp; 2 · <b>1.75</b></span><span class="small">Finisce 1–2: chi ha giocato <b>2</b> prende <b>1.75 punti</b>, chi ha giocato 1 o X prende 0.</span></div>`)
+  +sec("5 · La classifica",`<ul><li>Conta la somma dei punti di tutte le giornate, dalla giornata di partenza della lega.</li><li>A parità di punti è avanti chi ha il <b>miglior punteggio di giornata</b> (MP), cioè i punti più alti fatti in una singola giornata. Con lo stesso MP la posizione è condivisa.</li><li>L'admin della lega può dare <b>bonus o penalità</b>: compaiono accanto al nome e sotto la classifica.</li></ul>`)
+  +sec("6 · Partite rinviate",`<ul><li>Se una partita viene rinviata, si aspetta il recupero: il suo pronostico resta <b>modificabile fino al suo nuovo fischio d'inizio</b> e la sua quota continua ad aggiornarsi.</li><li>Le altre partite della giornata restano chiuse e si giocano normalmente.</li></ul>`)
+  +`<p class="small muted" style="font-family:var(--f-ui)">È un gioco tra amici, gratuito e senza soldi in palio: non è una scommessa.</p>`;
+}
 /* ---- Impostazioni (7/11): per ora il tema; la scelta resta in questo browser ---- */
 function curTheme(){try{return localStorage.getItem("totofanta-theme")||"auto"}catch{return "auto"}}
 function vSettings(){
@@ -1466,7 +1524,7 @@ function vPanel(){
   if(!S.fixtures.length)return html+noCalendar();
   const n=S.admN||(S.admN=adminDefaultRound());const fs=fixturesOf(n);
   if(!S.admEdit||S.admEdit.n!==n){S.admEdit={n,e:{}};for(const f of fs)S.admEdit.e[f.id]=admBase(f)}
-  const now=Date.now();const pub=!!S.calRounds[n];const complete=fs.filter(f=>f.kickoff&&S.odds[f.id]).length;
+  const now=Date.now();const pub=!!S.calRounds[n];const complete=fs.filter(f=>f.postponed||(f.kickoff&&S.odds[f.id])).length;
   html+=`<section class="card">${roundNav(n,"admStep","adm-n",1)}
    <div class="row"><span class="grow small" style="font-family:var(--f-ui)">${pub?"Quote <b>pubblicate</b>: i giocatori le vedono e possono pronosticare.":`Quote <b>non pubblicate</b> · partite pronte (orario e quote salvati): <b>${complete}/10</b>`}</span>
    <span class="chip ${pub?"ok":"warn"}">${pub?"Pubblicata":"Non pubblicata"}</span></div>
@@ -1479,10 +1537,11 @@ function vPanel(){
      <div class="od">${["o1","oX","o2"].map((k,j)=>`<input type="text" inputmode="decimal" id="adm-${k}${f.id}" data-bind="admEdit.e.${f.id}.${k}" value="${esc(e[k])}" placeholder="${["1","X","2"][j]}" aria-label="Quota ${["1","X","2"][j]} ${esc(f.home)}–${esc(f.away)}">`).join("")}</div>
      <div class="sc"><input type="number" min="0" id="adm-h${f.id}" data-bind="admEdit.e.${f.id}.hg" value="${esc(e.hg)}" ${started?"":"disabled"} aria-label="Gol ${esc(f.home)}"><span>-</span><input type="number" min="0" id="adm-a${f.id}" data-bind="admEdit.e.${f.id}.ag" value="${esc(e.ag)}" ${started?"":"disabled"} aria-label="Gol ${esc(f.away)}"></div>
      ${ONLINE&&S.odds[f.id]?`<span class="small st oddsrc">${S.odds[f.id].manual?`<b>quota manuale</b> <button class="linkbtn" data-act="admAuto" data-id="${f.id}">torna automatica</button>`:S.odds[f.id].source==="api"?"quota automatica":"quota inserita a mano"}</span>`:""}
+     <span class="small st pprow">${f.postponed?`<span class="chip warn">Rinviata</span> <button class="linkbtn" data-act="admPost" data-id="${f.id}" data-v="0">annulla rinvio</button>`:f.hg==null?`<button class="linkbtn" data-act="admPost" data-id="${f.id}" data-v="1">segna come rinviata</button>`:""}</span>
      <span class="small muted st">${!e.k?`orario da definire · indicativa ${f.day?fmtDow(f.day):"—"}`:started?(es?"esito "+es:"risultato da inserire"):"da giocare"}</span></div>`}).join("")}</div>
    ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
    <div class="row"><button class="btn sm" data-act="admSave" ${S.busy?"disabled":""}>Salva</button><button class="btn sm ghost" data-act="admUndo">Annulla modifiche</button><button class="btn sm sec" data-act="admSim">Simula risultati (test)</button></div>
-   <p class="small muted" style="font-family:var(--f-ui)">${ONLINE?"Le quote si aggiornano da sole fino al fischio d'inizio della prima partita, poi restano fisse: da quel momento le puoi cambiare solo tu, da qui. Una quota che modifichi diventa <b>manuale</b> e l'aggiornamento automatico non la tocca più. La giornata si pubblica da sola quando tutte le 10 partite hanno orario e quote. ":""}Per pubblicare servono orario e quote di tutte le 10 partite. Il risultato si inserisce dopo il calcio d'inizio; se lo correggi, le classifiche si ricalcolano da sole.</p></section>`;
+   <p class="small muted" style="font-family:var(--f-ui)">${ONLINE?"Le quote si aggiornano da sole fino al fischio d'inizio della prima partita, poi restano fisse: da quel momento le puoi cambiare solo tu, da qui. Una quota che modifichi diventa <b>manuale</b> e l'aggiornamento automatico non la tocca più. La giornata si pubblica da sola quando tutte le 10 partite hanno orario e quote. ":""}Per pubblicare servono orario e quote di tutte le 10 partite (le rinviate possono mancare). Una partita <b>rinviata</b> non conta per la chiusura della giornata: il suo pronostico resta aperto, e la sua quota si aggiorna, fino al nuovo calcio d'inizio; di solito la segna da sola la sincronizzazione del calendario. Il risultato si inserisce dopo il calcio d'inizio; se lo correggi, le classifiche si ricalcolano da sole.</p></section>`;
   return html;
 }
 
@@ -1528,6 +1587,13 @@ function vAdmin(L){
    ${(S.adjust||[]).length?`<div class="list">${S.adjust.map(a=>`<div class="row"><span class="adjmark ${a.pts<0?"neg":"pos"}">${a.pts>0?"+":"−"}${f2(Math.abs(a.pts))}</span><span class="grow">${esc(S.members.find(m=>m.mid===a.mid)?.nick||"—")}${a.why?` <span class="small muted">· ${esc(a.why)}</span>`:""}</span><button class="btn sm ghost" data-act="delAdjust" data-id="${a.id}">Annulla</button></div>`).join("")}</div>`:""}
   </section>
   ${L.type==="private"?`<section class="card"><h3>Password della lega</h3><form class="fieldbtn" data-submit="setLeaguePw" novalidate><input type="text" id="lpw" data-bind="pwForm" value="${esc(S.pwForm)}" placeholder="${S.leaguePw[L._id]?"Nuova password":"Imposta la password"}" autocomplete="off" aria-label="Nuova password"><button class="btn" type="submit" ${S.busy?"disabled":""}>Salva</button></form><p class="small muted" style="font-family:var(--f-ui)">${S.leaguePw[L._id]?`Attuale: <b>${esc(S.leaguePw[L._id])}</b>. `:""}Gli iscritti la vedono nella pagina della lega, per invitare altri.</p></section>`:""}
+  ${(()=>{const others=approved().filter(m=>m._id!==S.uid).sort((a,b)=>a.nick.localeCompare(b.nick,"it",{sensitivity:"base"}));const G=S.giveAdmin||{pick:""};
+    const who=others.find(m=>(m.mid||m._id)===G.pick);
+    return `<section class="card"><h3>Cedi il ruolo di admin</h3>${!others.length?`<p class="small muted" style="font-family:var(--f-ui)">Sei l'unico iscritto: quando entreranno altri giocatori potrai nominare uno di loro admin al tuo posto.</p>`:
+     G.ask&&who?`<p class="small" style="font-family:var(--f-ui)"><b>${esc(who.nick)}</b> diventerà l'admin di “${esc(L.name)}” e avrà questo pannello. Tu resti nella lega come giocatore e non potrai riprenderti il ruolo da solo.</p>
+      <div class="btns2"><button class="btn" data-act="giveAdminOk" ${S.busy?"disabled":""}>${S.busy?"Attendi…":"Cedi il ruolo"}</button><button class="btn sec" data-act="giveAdminNo">Annulla</button></div>`:
+     `<p class="small muted" style="font-family:var(--f-ui)">Scegli un iscritto: diventerà admin al posto tuo e tu resterai nella lega come giocatore.</p>
+      <div class="fieldbtn"><div class="selwrap"><select id="ga-sel" data-giveadmin="1" aria-label="Nuovo admin"><option value="">Nuovo admin…</option>${others.map(m=>`<option value="${esc(m.mid||m._id)}"${G.pick===(m.mid||m._id)?" selected":""}>${esc(m.nick)}</option>`).join("")}</select>${CHEV}</div><button class="btn" data-act="giveAdminAsk" ${G.pick?"":"disabled"}>Cedi</button></div>`}</section>`})()}
   ${S.confirm==="delLeague"?`<section class="card" id="del-league"><h3>Eliminare “${esc(L.name)}”?</h3><p class="small" style="font-family:var(--f-ui)">Verranno eliminate giornate, schedine e classifica per tutti i partecipanti. Non si può annullare.</p><div class="btns2"><button class="btn danger" data-act="delLeague">Elimina</button><button class="btn sec" data-act="delLeagueNo">Annulla</button></div></section>`:`<section class="card"><button class="btn wide danger" data-act="delLeague">Elimina lega</button></section>`}`;
 }
 

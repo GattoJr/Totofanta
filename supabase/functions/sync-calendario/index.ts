@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
   const matches: any[] = api.matches || [];
 
   // --- calendario nel database
-  const { data: fixtures, error } = await db.from("fixtures").select("id,n,home,away,kickoff,day,hg,ag");
+  const { data: fixtures, error } = await db.from("fixtures").select("id,n,home,away,kickoff,day,hg,ag,postponed");
   if (error) return json({ error: error.message }, 500);
   const teams = [...new Set(fixtures!.map((f) => f.home))];
   const teamOf = (t: any): string | null => {
@@ -99,6 +99,11 @@ Deno.serve(async (req) => {
     const label = `${f.n}ª ${f.home}–${f.away}`;
     if (m.status === "POSTPONED" || m.status === "SUSPENDED" || m.status === "CANCELLED") {
       postponed.push({ id: f.id, match: label, status: m.status });
+      // regola dell'11/11: partita rinviata = pronostico aperto fino al recupero. Si segna "postponed"
+      // e si toglie il calcio d'inizio originale; quello nuovo arriva quando la partita è ricalendarizzata.
+      if (m.status === "POSTPONED" && f.hg == null && (!f.postponed || f.kickoff != null)) {
+        changes.push({ id: f.id, match: label, from: { kickoff: f.kickoff, postponed: f.postponed }, to: { postponed: true, kickoff: null } });
+      }
       continue;
     }
     const started = f.kickoff != null && Date.parse(f.kickoff) <= now;
