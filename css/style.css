@@ -12,10 +12,11 @@ img{max-width:100%}
   --open-bg:#CFF5E4; --open-ink:#0B6B45;
   --shadow:0 1px 2px rgba(13,24,48,.05); --shadow-up:0 8px 20px rgba(13,24,48,.10);
   --scrim:rgba(8,14,28,.45);
-  --f-title:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-ui:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-num:"Inter",system-ui,sans-serif;
-  --f-disp:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-title:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-ui:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-num:"Plus Jakarta Sans",system-ui,sans-serif;
+  --f-disp:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --num-acc:#2F64F2;
   --r:16px; --nav-h:64px; --brand-accent:#2F64F2;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
@@ -23,13 +24,13 @@ img{max-width:100%}
   --blue:#2F64F2; --blue-ink:#FFFFFF; --blue-soft:#1B2B52; --blue-text:#8FB0FF;
   --win:#3DDC97; --win-soft:#11392B; --lose:#FF7A85; --lose-soft:#3A1720; --warn:#F5B84A; --warn-soft:#3A2A0E;
   --open-bg:#3DDC97; --open-ink:#0A1222;
-  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); --brand-accent:#6C93FF; color-scheme:dark}}
+  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); --brand-accent:#6C93FF; --num-acc:#8FB0FF; --win-ink:#0A1222; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0A1222; --card:#131D33; --field:#0F1830; --ink:#EEF2FA; --muted:#8D9AB5; --line:#22304D;
   --blue:#2F64F2; --blue-ink:#FFFFFF; --blue-soft:#1B2B52; --blue-text:#8FB0FF;
   --win:#3DDC97; --win-soft:#11392B; --lose:#FF7A85; --lose-soft:#3A1720; --warn:#F5B84A; --warn-soft:#3A2A0E;
   --open-bg:#3DDC97; --open-ink:#0A1222;
-  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); --brand-accent:#6C93FF; color-scheme:dark}
+  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); --brand-accent:#6C93FF; --num-acc:#8FB0FF; --win-ink:#0A1222; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-title);font-size:15px;line-height:1.4}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
@@ -773,3 +774,70 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
   .rhead{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
   .rhead .ressel{flex:0 1 380px}
 }
+
+/* ===== Restyling "Morbido" (11/11): carattere Plus Jakarta Sans e nuove sezioni ===== */
+/* carattere: Plus Jakarta Sans al posto di Barlow Condensed e Inter, cifre a larghezza fissa per i numeri */
+.timer .clock,.hero .timer .clock,.pk .o,.summary b,td.n,.code{font-variant-numeric:tabular-nums}
+.top h1,.disp,.pagetitle,.ltitle .ltn,.modal h2,.drawer .grp,.dside .grp,.eyebrow,.dside .sbrand{letter-spacing:-.01em}
+.top h1.brand,.dside .sbrand{letter-spacing:-.02em}
+.top h1.brand{font-size:28px}
+.dside .sbrand{font-size:30px}
+.ltitle .ltn{font-size:28px;line-height:1.05}
+.ltitle .ltn.long{font-size:23px}
+.pagetitle{font-size:28px}
+.phead h2{font-size:22px;line-height:1.1}
+.rkname{font-size:32px}.rkname.long{font-size:26px}
+.hero .timer .clock{font-size:24px;letter-spacing:-.01em}
+.nexthead .disp{font-size:16px;letter-spacing:.02em}
+.drawer .grp,.dside .grp{font-size:13px;letter-spacing:.06em}
+.eyebrow{letter-spacing:.04em;font-size:14px}
+.modal h2{font-size:21px}
+@media (min-width:1024px){.hero .timer .clock{font-size:36px}}
+
+/* Home: mini classifica come nel mockup (etichetta sopra, numero sotto, punti colorati) */
+.statcard{text-align:left}
+.statcard .statnick{font-size:14px;color:var(--muted)}
+.statcard .stats>span{align-items:flex-start;justify-content:flex-start;text-align:left;padding:10px 12px;border-radius:16px;gap:2px}
+.statcard .stats span span{font-size:11.5px}
+.statcard .stats b{font-family:var(--f-ui);font-weight:800;font-size:26px;line-height:1.15;text-align:left;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.statcard .stats b.acc{color:var(--num-acc)}
+.statcard .golink{align-self:flex-start;text-align:left}
+
+/* bollini delle squadre piccoli e pieni (Prossimi incontri e Pronostici) */
+.crest.sm{width:24px;height:24px;border:0;font-size:8px;font-weight:800;letter-spacing:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)}
+
+/* Pronostici: card della partita con selettore 1·X·2 a tre posizioni */
+.match{padding:10px 12px 12px;gap:8px}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.mteams{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14px;white-space:nowrap;min-width:0}
+.mscore{font-weight:800;font-variant-numeric:tabular-nums;background:var(--field);border-radius:8px;padding:1px 7px}
+.mhead .mdate{font-size:12px;white-space:nowrap}
+.seg3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border-radius:14px;background:var(--field)}
+.seg3 .pk{width:auto;height:44px;flex-direction:row;gap:6px;border:0;border-radius:10px;background:transparent;color:var(--ink);box-shadow:none}
+.seg3 .pk .s{font-family:var(--f-ui);font-weight:800;font-size:14px}
+.seg3 .pk .o{font-size:13px;font-weight:600;color:var(--muted)}
+.seg3 .pk:hover:not(:disabled):not(.sel){background:var(--card)}
+.seg3 .pk.sel{background:var(--blue);color:#fff;box-shadow:0 2px 6px rgba(13,24,48,.18)}
+.seg3 .pk.sel .o{color:#fff}
+.seg3 .pk.res{box-shadow:inset 0 0 0 2px var(--win)}
+.seg3 .pk.sel.won{background:var(--win);color:var(--win-ink,#fff);box-shadow:none}
+.seg3 .pk.sel.won .o{color:var(--win-ink,#fff)}
+.seg3 .pk.sel.lost{background:var(--lose-soft);color:var(--lose);box-shadow:inset 0 0 0 1.5px var(--lose)}
+.seg3 .pk.sel.lost .o{color:var(--lose)}
+.seg3 .pk:disabled:not(.sel):not(.res){opacity:.55}
+.match .verdict{margin-top:-2px}
+
+/* Classifica come nel mockup: niente fascia colorata in testa, posizioni in quadratini arrotondati, la tua riga evidenziata */
+.rankcard{padding:6px}
+.rank table{border-collapse:separate;border-spacing:0}
+.rank th{background:none;color:var(--muted);font-size:11.5px;font-weight:700;letter-spacing:0;text-transform:none;padding:10px 8px 6px}
+.rank td{border-top:0;padding:9px 8px}
+.rank tr.me td{background:var(--blue-soft)}
+.rank tr.me td:first-child{border-radius:14px 0 0 14px}
+.rank tr.me td:last-child{border-radius:0 14px 14px 0}
+.rank td.nm{font-weight:700}
+.rank td.mpv{color:var(--muted)}
+.rank td.n b{font-family:var(--f-ui);font-size:15px;font-weight:800}
+.rank .posb,.rank .posb.p2,.rank .posb.p3{min-width:28px;height:28px;border-radius:10px;font-family:var(--f-ui);font-size:13px;font-weight:800;background:var(--field);color:var(--ink);box-shadow:none}
+.rank .posb.p1{background:var(--blue);color:#fff}
+.rankcard .adjlist{margin:4px 8px 6px}
