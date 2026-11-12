@@ -139,6 +139,9 @@ const Local={
   async removeMember(m){await LocalStore.del(`leagues/${S.lid}/members/${m._id}`)},
   /* statistiche: i miei pronostici in ogni mia lega */
   async myPicksAll(){return myLeagues().map(L=>{const picks={};for(const d of LocalStore.list(`leagues/${L._id}/picks`))if(d.uid===S.uid)Object.assign(picks,d.picks||{});return{lid:L._id,name:L.name,startRound:L.startRound,picks}})},
+  /* Importa/Esporta (12/11): la mia schedina di una giornata in ogni mia lega */
+  async myRoundPicks(n){return myLeagues().map(L=>({lid:L._id,name:L.name,startRound:L.startRound,picks:{...(LocalStore.data[`leagues/${L._id}/picks/g${n}~${S.uid}`]?.picks||{})}}))},
+  async copyPicks(n,targets,picks){for(const t of targets){const p=`leagues/${t.lid}/picks/g${n}~${S.uid}`;await LocalStore.set(p,{uid:S.uid,round:"g"+n,picks:{...(LocalStore.data[p]?.picks||{}),...picks},updatedAt:Date.now()})}},
   async transferAdmin(lid,uid){const L=LocalStore.data[`leagues/${lid}`];if(!L||L.adminId!==S.uid)throw new Error("Solo l'admin può nominare un nuovo admin");await LocalStore.set(`leagues/${lid}`,{...L,adminId:uid})},
   async leaveLeague(){const lid=S.lid;await LocalStore.del(`leagues/${lid}/members/${S.uid}`);await this.removeFromMe(lid)},
   async joinOpen(name){const L=LocalStore.list("leagues").find(l=>l.nameKey===(name||"").trim().toLowerCase());return !L||!calRoundStarted(L.startRound)},
@@ -409,6 +412,16 @@ const Online={
     const ls=myLeagues();const rows=await Promise.all(mem.filter(m=>ls.some(L=>L._id===m.league_id)).map(m=>this.sb.from("picks").select("fixture_id,pick").eq("member_id",m.id).then(r=>({m,r}))));
     return rows.map(({m,r})=>{if(r.error)throw new Error(itMsg(r.error));const L=ls.find(x=>x._id===m.league_id);const picks={};for(const x of r.data)picks[String(x.fixture_id)]=x.pick;return{lid:L._id,name:L.name,startRound:L.startRound,picks}});
   },
+  /* Importa/Esporta (12/11): la mia schedina della giornata n in ogni mia lega, con una sola richiesta per i pronostici */
+  async myRoundPicks(n){
+    const mem=this.check(await this.sb.from("members").select("id,league_id,status").eq("user_id",S.uid));
+    const ls=myLeagues();const mm=mem.filter(m=>m.status==="approved"&&ls.some(L=>L._id===m.league_id));if(!mm.length)return[];
+    const pk=this.check(await this.sb.from("picks").select("member_id,fixture_id,pick").in("member_id",mm.map(m=>m.id)).gte("fixture_id",n*100+1).lte("fixture_id",n*100+10));
+    return mm.map(m=>{const L=ls.find(x=>x._id===m.league_id);const picks={};for(const x of pk)if(x.member_id===m.id)picks[String(x.fixture_id)]=x.pick;return{lid:L._id,mid:m.id,name:L.name,startRound:L.startRound,picks}});
+  },
+  /* copia i pronostici nelle leghe scelte: aggiunge o sostituisce, non cancella; il database accetta solo partite ancora aperte */
+  async copyPicks(n,targets,picks){const rows=[];for(const t of targets)for(const [f,p] of Object.entries(picks))rows.push({member_id:t.mid,fixture_id:+f,pick:p});
+    if(rows.length)this.check(await this.sb.from("picks").upsert(rows,{onConflict:"member_id,fixture_id"}))},
   async transferAdmin(lid,mid){this.check(await this.sb.rpc("transfer_admin",{p_league:lid,p_member:mid}))},
   async deleteAccount(){const {data,error}=await this.sb.functions.invoke("delete-account",{body:{confirm:"ELIMINA"}});if(error){let msg=error.message;try{msg=(await error.context.json()).error||msg}catch{}throw new Error(msg)}if(!data?.ok)throw new Error("Eliminazione non riuscita");await this.sb.auth.signOut()},
   async deleteLeague(){this.check(await this.sb.from("leagues").delete().eq("id",S.lid));await this.refreshLeagues()},
@@ -674,7 +687,7 @@ const ACT={
   drawer:()=>{S.drawer=!S.drawer;S.lsOpen=false;render()},
   lsToggle:()=>{S.lsOpen=!S.lsOpen;render()},
   lsPick:d=>{S.lsOpen=false;if(d.lid===S.lid){render();return}if(guard(()=>ACT.lsPick(d)))return;selectLeague(d.lid);go("home");toast(`Lega: ${league()?.name||""}`)},
-  closeAll:()=>{S.drawer=false;S.modal=null;S.xfer=null;S.xferLeave=null;S.help=null;S.formErr="";render()},
+  closeAll:()=>{S.drawer=false;S.modal=null;S.copy=null;S.xfer=null;S.xferLeave=null;S.help=null;S.formErr="";render()},
   help:d=>{S.help=S.help===d.k?null:d.k;render()},
   /* Come si gioca (11/11): aperta dal menu o dalla finestra Unisciti; dalla finestra, Indietro la riapre con i dati scritti */
   openPostponed:d=>{S.roundSel=+d.n;go("pronostici")},
@@ -718,6 +731,27 @@ const ACT={
     if(!m||pickLocked(r,m))return toast(m&&m.postponed?"Partita iniziata: il pronostico è chiuso":"Giornata iniziata: i pronostici sono chiusi");
     const cur={...draftPicks(r)};if(cur[m.id]===d.p)delete cur[m.id];else cur[m.id]=d.p;
     S.draft[r._id]=cur;render();
+  },
+  /* Importa da / Esporta in un'altra lega (12/11) */
+  copyOpen:d=>{const r=S.rounds.find(x=>x._id===d.r);if(!r)return;const lid=S.lid;
+    S.copy={mode:d.mode,r:r._id,n:r.n,list:null,sel:d.mode==="import"?"":{}};S.formErr="";S.modal="copy";render();
+    B.myRoundPicks(r.n).then(list=>{if(S.copy&&S.copy.n===r.n&&S.lid===lid){S.copy.list=list.filter(x=>x.lid!==lid).sort((a,b)=>a.name.localeCompare(b.name,"it",{sensitivity:"base"}));render()}})
+      .catch(e=>{if(S.copy){S.copy.list=[];S.formErr=itMsg(e);render()}})},
+  copyPickLeague:d=>{if(!S.copy)return;S.copy.sel=d.lid;S.formErr="";render()},
+  copyAll:()=>{const C=S.copy;if(!C?.list)return;const ok=C.list.filter(x=>copyTargetOk(x,C.n));const all=ok.every(x=>C.sel[x.lid]);C.sel={};if(!all)for(const x of ok)C.sel[x.lid]=true;render()},
+  copyImport:()=>{const C=S.copy;const r=C&&S.rounds.find(x=>x._id===C.r);const src=C?.list?.find(x=>x.lid===C.sel);if(!r||!src)return err("Scegli la lega da cui importare");
+    const cur={...draftPicks(r)};let n=0;for(const m of copyOpenMatches(r)){const p=src.picks[m.id];if(p&&cur[m.id]!==p){cur[m.id]=p;n++}}
+    S.modal=null;S.copy=null;S.formErr="";
+    if(!n){toast(`Nessuna differenza con “${src.name}”`);render();return}
+    S.draft[r._id]=cur;flash(`${n} ${n===1?"pronostico importato":"pronostici importati"}: premi Salva`)},
+  async copyExport(){const C=S.copy;const r=C&&S.rounds.find(x=>x._id===C.r);if(!r||!C.list)return;
+    const targets=C.list.filter(x=>C.sel[x.lid]&&copyTargetOk(x,C.n));if(!targets.length)return err("Scegli almeno una lega");
+    const picks=copySource(r);if(!Object.keys(picks).length)return err("Nessun pronostico da esportare");
+    if(pickChanges(r).length&&!await ACT.savePicks({r:r._id}))return;
+    S.busy=true;S.formErr="";render();
+    try{await B.copyPicks(C.n,targets,picks);S.modal=null;S.copy=null;S.busy=false;
+      flash(targets.length===1?`Pronostici esportati in “${targets[0].name}”`:`Pronostici esportati in ${targets.length} leghe`)}
+    catch(e){S.busy=false;S.formErr=itMsg(e).includes("row-level")?"Esportazione non riuscita: una partita è già iniziata. Riprova":itMsg(e);ONLINE&&Online.refresh();render()}
   },
   async savePicks(d){
     const r=S.rounds.find(x=>x._id===(d.r||S.leave?.r));if(!r)return;const ch=pickChanges(r);
@@ -878,6 +912,7 @@ app.addEventListener("change",e=>{const t=e.target;
   if(t.id==="who-sel")return switchLocal(t.value);
   if(t.id==="league-sel"){selectLeague(t.value);return}
   if(t.id==="cal-n"){S.calN=+t.value;render();return}
+  if(t.dataset&&t.dataset.cpx&&S.copy){S.copy.sel[t.dataset.cpx]=t.checked;S.formErr="";render();return}
   if(t.dataset&&t.dataset.giveadmin){S.giveAdmin={pick:t.value,ask:false};render();return}
   if(t.dataset&&t.dataset.xleave&&S.xferLeave){S.xferLeave.pick=t.value;S.formErr="";render();return}
   if(t.dataset&&t.dataset.xfer&&S.xfer){S.xfer.pick[t.dataset.xfer]=t.value;S.formErr="";render();return}
@@ -887,10 +922,13 @@ app.addEventListener("change",e=>{const t=e.target;
   if(t.id==="cf-logo"&&t.files[0]){const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement("canvas");c.width=c.height=128;const x=c.getContext("2d");const s=Math.min(img.width,img.height);x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,128,128);S.form.logo=c.toDataURL("image/jpeg",.85);render()};img.src=fr.result};fr.readAsDataURL(t.files[0])}
 });
 app.addEventListener("submit",e=>{e.preventDefault();const f=e.target.closest("form[data-submit]");if(f&&ACT[f.dataset.submit])ACT[f.dataset.submit]({})});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&(S.drawer||S.modal||S.help)){S.drawer=false;S.modal=null;S.help=null;render()}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&(S.drawer||S.modal||S.help)){S.drawer=false;S.modal=null;S.copy=null;S.help=null;render()}});
 
 /* ===================== Icone ===================== */
 const I={
+  /* Importa / Esporta pronostici (12/11): freccia verso la schedina / fuori dalla schedina */
+  cpin:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11M7 9l5 5 5-5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>`,
+  cpout:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3M7 8l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>`,
   mail:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></svg>`,
   share:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>`,
   book:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 12h5"/></svg>`,
@@ -946,7 +984,7 @@ function render(){
   document.body.classList.toggle("hasside",!bare);
   document.body.classList.toggle("wide",!!L&&!bare&&["home","pronostici","classifica","risultati"].includes(S.screen));
   app.innerHTML=`<header class="top${!bare&&title==="unoXdue"?" brandscr":""}"><div class="col">${leftBtn}${brand}${rightBtn}</div></header>
-  ${bare?"":vSide()}<main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${!bare&&S.modal==="xfer"&&S.xfer?vXfer():""}${!bare&&S.modal==="xferLeave"&&S.xferLeave?vXferLeave():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
+  ${bare?"":vSide()}<main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${!bare&&S.modal==="xfer"&&S.xfer?vXfer():""}${!bare&&S.modal==="copy"&&S.copy?vCopy():""}${!bare&&S.modal==="xferLeave"&&S.xferLeave?vXferLeave():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
   if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
   placeNextBar();
@@ -1191,6 +1229,9 @@ function vPicks(L){
   if(open.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${open.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
   if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
   const mine=draftPicks(r);const sc=roundScore(r,S.uid);let potential=0;const dirty=pickChanges(r).length;const anyOpen=roundAnyOpen(r);
+  /* Importa/Esporta (12/11): solo con più leghe e partite ancora aperte */
+  const canCopy=anyOpen&&myLeagues().length>1&&copyOpenMatches(r).length>0;
+  if(canCopy)html+=`<button class="btn sec block cpbtn" data-act="copyOpen" data-mode="import" data-r="${r._id}">${I.cpin}Importa da un'altra lega</button>`;
   html+=`<div class="pcols"><div class="pmatch">`+r.matches.map(m=>{
     const locked=pickLocked(r,m);const started=matchLocked(r,m);const e=esito(m);const pp=m.postponed&&!e&&!started;const p=mine[m.id];if(p&&!e)potential+=cents(oddOf(m,p));
     const btn=k=>{const o=oddOf(m,k);const sel=p===k;const cls=["pk",sel?"sel":"",sel&&e?(e===k?"won":"lost"):"",e===k&&!sel?"res":""].join(" ");
@@ -1201,11 +1242,42 @@ function vPicks(L){
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary${roundLocked(r)?"":" two"}"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div>${roundLocked(r)?`<div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div>`:`<div><b>${f2(potential)}</b><span>Punteggio massimo</span></div>`}</div>
   <p class="small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
+  if(canCopy)html+=`<button class="btn sec block cpbtn" data-act="copyOpen" data-mode="export" data-r="${r._id}" ${Object.keys(copySource(r)).length?"":"disabled"}>${I.cpout}Esporta in un'altra lega</button>`;
   if(anyOpen&&dirty){const first=!Object.keys(savedPicks(r._id)).length;
     const lbl=first?`${done}/${r.matches.length} pronostici`:`${dirty} ${dirty===1?"modifica":"modifiche"}`;
     html+=`<div class="savepill" role="status"><span class="spl">${lbl}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Salva`}</button></div>`}
   return html+`</div></div>`;
 }
+/* ---- Importa da / Esporta in un'altra lega (12/11) ----
+   Si copiano solo le partite ancora aperte e con le quote; nella lega di destinazione si aggiungono o sostituiscono i pronostici, non si cancella nulla. */
+function copyOpenMatches(r){return r.matches.filter(m=>!pickLocked(r,m)&&m.o1>1&&m.oX>1&&m.o2>1)}
+function copySource(r){const d=draftPicks(r);const out={};for(const m of copyOpenMatches(r))if(d[m.id])out[m.id]=d[m.id];return out}
+function copyTargetOk(x,n){return (x.startRound||1)<=n}
+function vCopy(){const C=S.copy;const r=S.rounds.find(x=>x._id===C.r);if(!r)return "";const imp=C.mode==="import";const tot=r.matches.length;
+  const close=`<button type="button" class="mclose" data-act="closeAll" aria-label="Chiudi">${I.close}</button>`;
+  const cnt=x=>Object.keys(x.picks).filter(k=>r.matches.some(m=>m.id===k)).length;
+  const nOpen=x=>copyOpenMatches(r).filter(m=>x.picks[m.id]).length;
+  let list;
+  if(!C.list)list=`<p class="small muted center">Caricamento delle tue leghe…</p>`;
+  else if(!C.list.length)list=`<p class="small muted center">Non hai altre leghe.</p>`;
+  else list=`<div class="cplist" role="${imp?"radiogroup":"group"}" aria-label="Leghe">`+C.list.map(x=>{const ok=copyTargetOk(x,C.n);const c=cnt(x);
+    const note=!ok?`Parte dalla ${x.startRound}ª giornata`:`${c}/${tot} pronostici`;
+    if(imp){const dis=!ok||!nOpen(x);const sel=C.sel===x.lid;
+      return `<button type="button" class="cprow" role="radio" aria-checked="${sel}" data-act="copyPickLeague" data-lid="${esc(x.lid)}" ${dis?"disabled":""}><span class="cpn"><b>${esc(x.name)}</b><span>${ok&&!c?"Nessun pronostico":note}</span></span><span class="cpdot" aria-hidden="true"></span></button>`}
+    return `<label class="cprow${ok?"":" off"}" for="cpx-${esc(x.lid)}"><span class="cpn"><b>${esc(x.name)}</b><span>${note}</span></span><input type="checkbox" id="cpx-${esc(x.lid)}" data-cpx="${esc(x.lid)}" ${C.sel[x.lid]&&ok?"checked":""} ${ok?"":"disabled"}></label>`}).join("")+`</div>`;
+  const okList=(C.list||[]).filter(x=>copyTargetOk(x,C.n));
+  const nSel=imp?0:okList.filter(x=>C.sel[x.lid]).length;
+  const src=Object.keys(copySource(r)).length;const dirty=pickChanges(r).length;
+  const txt=imp?`Copia nella schedina della ${C.n}ª giornata i pronostici che hai già inserito in un'altra lega. Dopo controllali e premi <b>Salva</b>.`
+    :`Copia i tuoi ${src} ${src===1?"pronostico":"pronostici"} della ${C.n}ª giornata nelle leghe che scegli.`;
+  const foot=imp?`Si copiano solo le partite non ancora iniziate; quelle senza pronostico nell'altra lega restano come sono.`
+    :`Nelle leghe scelte i pronostici di queste partite vengono sostituiti; le partite che qui non hai pronosticato restano come sono.${dirty?" Le modifiche non salvate verranno salvate anche qui.":""}`;
+  const all=!imp&&okList.length>1?`<button type="button" class="btn ghost sm cpall" data-act="copyAll">${okList.every(x=>C.sel[x.lid])?"Deseleziona tutte":"Seleziona tutte"}</button>`:"";
+  const go=imp?`<button class="btn block" data-act="copyImport" ${!C.sel||S.busy?"disabled":""}>Importa</button>`
+    :`<button class="btn block" data-act="copyExport" ${!nSel||S.busy?"disabled":""}>${S.busy?"Esporto…":nSel>1?`Esporta in ${nSel} leghe`:"Esporta"}</button>`;
+  return `<div class="scrim" data-act="closeAll"></div><div class="card modal cpmodal" role="dialog" aria-modal="true" aria-labelledby="cpt">${close}<h2 id="cpt">${imp?"Importa da un'altra lega":"Esporta in un'altra lega"}</h2>
+  <p class="small" style="font-family:var(--f-ui)">${txt}</p>${all}${list}<p class="small muted" style="font-family:var(--f-ui)">${foot}</p>
+  ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}${go}<button class="btn ghost" data-act="closeAll">Annulla</button></div>`}
 function vOthers(r){
   if(!roundLocked(r))return "";
   if(!S.showOthers)return `<button class="btn wide sec" data-act="others">Vedi le schedine di tutti</button>`;
