@@ -1267,7 +1267,7 @@ function vCopy(){const C=S.copy;const r=S.rounds.find(x=>x._id===C.r);if(!r)retu
   else list=`<div class="cplist" role="${imp?"radiogroup":"group"}" aria-label="Leghe">`+C.list.map(x=>{const ok=copyTargetOk(x,C.n);const c=cnt(x);
     const note=!ok?`Parte dalla ${x.startRound}ª giornata`:`${c}/${tot} pronostici`;
     if(imp){const dis=!ok||!c;const sel=C.sel===x.lid;
-      return `<button type="button" class="cprow" role="radio" aria-checked="${sel}" data-act="copyPickLeague" data-lid="${esc(x.lid)}" ${dis?"disabled":""}><span class="cpn"><b>${esc(x.name)}</b><span>${ok&&!c?"Nessun pronostico":note}</span></span><span class="cpdot" aria-hidden="true"></span></button>`}
+      return `<button type="button" class="cprow" role="radio" aria-checked="${sel}" data-act="copyPickLeague" data-lid="${esc(x.lid)}" ${dis?"disabled":""}><span class="cpn"><b>${esc(x.name)}</b>${!ok?`<span>${note}</span>`:!c?`<span>Nessun pronostico</span>`:""}</span><span class="cpdot" aria-hidden="true"></span></button>`}
     return `<label class="cprow${ok?"":" off"}" for="cpx-${esc(x.lid)}"><span class="cpn"><b>${esc(x.name)}</b>${ok?"":`<span>${note}</span>`}</span><input type="checkbox" id="cpx-${esc(x.lid)}" data-cpx="${esc(x.lid)}" ${C.sel[x.lid]&&ok?"checked":""} ${ok?"":"disabled"}></label>`}).join("")+`</div>`;
   const okList=(C.list||[]).filter(x=>copyTargetOk(x,C.n));
   const nSel=imp?0:okList.filter(x=>C.sel[x.lid]).length;
