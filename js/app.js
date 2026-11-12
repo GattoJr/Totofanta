@@ -736,6 +736,7 @@ const ACT={
   },
   /* Importa da / Esporta in un'altra lega (12/11) */
   copyOpen:d=>{const r=S.rounds.find(x=>x._id===d.r);if(!r)return;const lid=S.lid;
+    if(d.mode==="export"&&!exportReady(r))return toast("Inserisci tutti i pronostici e salva per esportare");
     S.copy={mode:d.mode,r:r._id,n:r.n,list:null,sel:d.mode==="import"?"":{}};S.formErr="";S.modal="copy";render();
     B.myRoundPicks(r.n).then(list=>{if(S.copy&&S.copy.n===r.n&&S.lid===lid){S.copy.list=list.filter(x=>x.lid!==lid).sort((a,b)=>a.name.localeCompare(b.name,"it",{sensitivity:"base"}));render()}})
       .catch(e=>{if(S.copy){S.copy.list=[];S.formErr=itMsg(e);render()}})},
@@ -1245,7 +1246,8 @@ function vPicks(L){
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary${roundLocked(r)?"":" two"}"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div>${roundLocked(r)?`<div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div>`:`<div><b>${f2(potential)}</b><span>Punteggio massimo</span></div>`}</div>
   <p class="small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
-  if(canCopy)html+=`<button class="btn sec block cpbtn" data-act="copyOpen" data-mode="export" data-r="${r._id}" ${Object.keys(copySource(r)).length?"":"disabled"}>${I.cpout}Esporta in un'altra lega</button>`;
+  /* Esporta (12/11): spento finché la schedina non è completa e salvata; toccandolo compare un messaggio */
+  if(canCopy){const ready=exportReady(r);html+=`<button class="btn sec block cpbtn${ready?"":" off"}" aria-disabled="${!ready}" data-act="copyOpen" data-mode="export" data-r="${r._id}">${I.cpout}Esporta in un'altra lega</button>`}
   if(anyOpen&&dirty){const first=!Object.keys(savedPicks(r._id)).length;
     const lbl=first?`${done}/${r.matches.length} pronostici`:`${dirty} ${dirty===1?"modifica":"modifiche"}`;
     html+=`<div class="savepill" role="status"><span class="spl">${lbl}</span><button class="btn" data-act="savePicks" data-r="${r._id}" ${S.busy?"disabled":""}>${S.busy?"Salvo…":`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Salva`}</button></div>`}
@@ -1253,6 +1255,7 @@ function vPicks(L){
 }
 /* ---- Importa da / Esporta in un'altra lega (12/11) ----
    Copia esatta della schedina della giornata, possibile solo prima che la giornata inizi. */
+function exportReady(r){const sv=savedPicks(r._id);return !pickChanges(r).length&&r.matches.length>0&&r.matches.every(m=>sv[m.id])}
 function copySource(r){const d=draftPicks(r);const out={};for(const m of r.matches)if(d[m.id])out[m.id]=d[m.id];return out}
 function copyTargetOk(x,n){return (x.startRound||1)<=n}
 function vCopy(){const C=S.copy;const r=S.rounds.find(x=>x._id===C.r);if(!r)return "";const imp=C.mode==="import";const tot=r.matches.length;

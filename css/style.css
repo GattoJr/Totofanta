@@ -980,3 +980,4 @@ a.btn{text-decoration:none}
 .cpall{align-self:flex-end;margin:-4px 0 -6px}
 /* con la pillola Salva in basso, spazio in più perché "Esporta in un'altra lega" resti raggiungibile */
 @media (max-width:1023px){main:has(.savepill){padding-bottom:calc(var(--nav-h) + 96px + env(safe-area-inset-bottom,0px))}}
+.cpbtn.off{opacity:.45}
