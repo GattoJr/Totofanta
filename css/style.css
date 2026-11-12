@@ -1,36 +1,24 @@
 /* reset di base */
-:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root{color-scheme:dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;font-size:14px}
 img{max-width:100%}
 [hidden]{display:none!important}
-/* Restyling A: chiaro di base, scuro se il dispositivo è impostato in modalità scura */
+/* Restyling A, solo tema scuro (dal 12/11 il sito ha un unico design) */
 :root{
-  --bg:#F2F5FB; --card:#FFFFFF; --field:#F2F5FB; --ink:#0D1830; --muted:#56627A; --line:#DCE3F0;
-  --blue:#2F64F2; --blue-ink:#FFFFFF; --blue-soft:#E6EDFF; --blue-text:#1D47C9; --hero-ink:#1D47C9;
-  --win:#0B7A4B; --win-soft:#CFF5E4; --lose:#C8283A; --lose-soft:#FDE3E6; --warn:#8A5200; --warn-soft:#FFF1D6;
-  --open-bg:#CFF5E4; --open-ink:#0B6B45;
-  --shadow:0 1px 2px rgba(13,24,48,.05); --shadow-up:0 8px 20px rgba(13,24,48,.10);
-  --scrim:rgba(8,14,28,.45);
+  --bg:#0A1222; --card:#131D33; --field:#0F1830; --ink:#EEF2FA; --muted:#8D9AB5; --line:#22304D;
+  --blue:#2F64F2; --blue-ink:#FFFFFF; --blue-soft:#1B2B52; --blue-text:#8FB0FF; --hero-ink:#1D47C9;
+  --win:#3DDC97; --win-soft:#11392B; --lose:#FF7A85; --lose-soft:#3A1720; --warn:#F5B84A; --warn-soft:#3A2A0E;
+  --open-bg:#3DDC97; --open-ink:#0A1222; --win-ink:#0A1222;
+  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45);
+  --scrim:rgba(0,0,0,.6);
   --f-title:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-ui:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-num:"Plus Jakarta Sans",system-ui,sans-serif;
   --f-disp:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --num-acc:#2F64F2;
-  --r:16px; --nav-h:64px; --brand-accent:#2F64F2;
+  --num-acc:#8FB0FF;
+  --r:16px; --nav-h:64px; --brand-accent:#6C93FF;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0A1222; --card:#131D33; --field:#0F1830; --ink:#EEF2FA; --muted:#8D9AB5; --line:#22304D;
-  --blue:#2F64F2; --blue-ink:#FFFFFF; --blue-soft:#1B2B52; --blue-text:#8FB0FF;
-  --win:#3DDC97; --win-soft:#11392B; --lose:#FF7A85; --lose-soft:#3A1720; --warn:#F5B84A; --warn-soft:#3A2A0E;
-  --open-bg:#3DDC97; --open-ink:#0A1222;
-  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); --brand-accent:#6C93FF; --num-acc:#8FB0FF; --win-ink:#0A1222; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#0A1222; --card:#131D33; --field:#0F1830; --ink:#EEF2FA; --muted:#8D9AB5; --line:#22304D;
-  --blue:#2F64F2; --blue-ink:#FFFFFF; --blue-soft:#1B2B52; --blue-text:#8FB0FF;
-  --win:#3DDC97; --win-soft:#11392B; --lose:#FF7A85; --lose-soft:#3A1720; --warn:#F5B84A; --warn-soft:#3A2A0E;
-  --open-bg:#3DDC97; --open-ink:#0A1222;
-  --shadow:none; --shadow-up:0 8px 24px rgba(0,0,0,.45); --scrim:rgba(0,0,0,.6); --brand-accent:#6C93FF; --num-acc:#8FB0FF; --win-ink:#0A1222; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-title);font-size:15px;line-height:1.4}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
@@ -300,8 +288,7 @@ h2,h3{font-family:var(--f-ui)}
 .top h1{font-family:var(--f-disp);font-weight:800;font-size:26px;text-transform:uppercase;letter-spacing:.03em}
 /* titolo in cima (7/11, proposta A "corsivo veloce" senza linee): TOTO scuro, FANTA blu, corsivo condensato */
 .top h1.brand{display:flex;align-items:center;justify-content:center;gap:0;font-size:32px;font-style:italic;letter-spacing:.01em;line-height:1}
-.top h1.brand .bt{color:var(--ink)}
-.top h1.brand .bf{color:var(--brand-accent)}
+.top h1.brand img{display:block;height:34px;width:auto}
 .b1x2{font-family:var(--f-disp);font-weight:700;font-size:13px;background:var(--blue);color:#fff;padding:2px 6px;border-radius:6px;letter-spacing:0}
 .iconbtn{width:44px;height:44px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
 .iconbtn:hover{background:var(--field)}
@@ -645,14 +632,6 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .calwhen .tbd{color:var(--warn,#b26a00)}
 .calres b{font-family:var(--f-num);font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
 /* Impostazioni: scelta del tema */
-.themegrp{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.themeopt{display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 6px;border-radius:12px;border:1.5px solid var(--line);background:var(--field);cursor:pointer;font-family:var(--f-ui);text-align:center}
-.themeopt b{font-size:14px}
-.themeopt{gap:8px;padding:14px 6px}
-.themeopt svg{width:26px;height:26px;color:var(--muted)}
-.themeopt[aria-checked="true"] svg{color:var(--blue-text)}
-.themeopt[aria-checked="true"]{border-color:var(--blue);background:var(--blue-soft)}
-.themeopt[aria-checked="true"] b{color:var(--blue-text)}
 /* mini-classifica in Home (8/11): nickname a sinistra, due riquadri uguali centrati, collegamento centrato sotto */
 .statcard{text-align:center;align-items:stretch}
 .statcard .statnick{align-self:flex-start;text-align:left;font-family:var(--f-ui);font-weight:700;font-size:16px;margin:0}
@@ -722,7 +701,7 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
   body.hasside{padding-left:320px}
   .dside{display:flex;flex-direction:column;gap:4px;position:fixed;top:0;bottom:0;left:0;width:320px;box-sizing:border-box;overflow-y:auto;background:var(--card);border-right:1px solid var(--line);padding:22px 14px 14px;z-index:20}
   .dside .sbrand{font-family:var(--f-disp);font-style:italic;font-weight:800;font-size:34px;line-height:1;margin:0 0 14px;padding:0 10px}
-  .dside .sbrand .bf{color:var(--brand-accent)}
+  .dside .sbrand img{display:block;height:44px;width:auto}
   .dside .lswitch,.dside button.lswitch{background:var(--field);border:1px solid var(--line);color:var(--ink);margin:0 0 8px}
   .dside .lswitch:focus-within{outline-color:var(--blue)}
   .dside .lsbox{margin:0 0 8px}.dside .lsbox .lswitch{margin:0}
@@ -956,9 +935,7 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
   .admlist .adm-m .st{grid-column:5;align-self:center;line-height:1.3}
 }
 /* pronostici (11/11): riquadri 1·X·2 più staccati dal riquadro della partita */
-:root{--pk-bg:#E8EEFA;--pk-line:#C3D0EA}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--pk-bg:#1F2D4D;--pk-line:#34497A}}
-:root[data-theme="dark"]{--pk-bg:#1F2D4D;--pk-line:#34497A}
+:root{--pk-bg:#1F2D4D;--pk-line:#34497A}
 .odds3 .pk{background:var(--pk-bg);border:1.5px solid var(--pk-line)}
 .odds3 .pk:hover:not(:disabled):not(.sel){border-color:var(--blue);background:var(--blue-soft)}
 .odds3 .pk.sel{border-color:var(--blue)}
@@ -981,3 +958,6 @@ button.lswitch{width:100%;margin:0;color:var(--blue-ink);font:inherit;text-align
 .mailrow{display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;background:var(--field);font-family:var(--f-ui);word-break:break-all}
 .mailrow svg{width:20px;height:20px;flex:none;color:var(--blue)}
 a.btn{text-decoration:none}
+
+/* Logo unoXdue (12/11): scritta in intestazione e nel menu del PC, icona nella schermata di accesso */
+.loginmark{display:block;width:88px;height:88px;align-self:center;border-radius:20px}

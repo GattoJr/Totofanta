@@ -429,7 +429,7 @@ const Online={
           catch(e){S.formErr=itMsg(e);this.gsi.ready=false}finally{S.busy=false;render()}}});
       this.gsi.ready=true;
     }
-    el.innerHTML="";g.renderButton(el,{type:"standard",theme:"outline",size:"large",text:"continue_with",shape:"rectangular",locale:"it",logo_alignment:"center",width:Math.min(400,Math.max(200,el.clientWidth||320))});
+    el.innerHTML="";g.renderButton(el,{type:"standard",theme:"filled_black",size:"large",text:"continue_with",shape:"rectangular",locale:"it",logo_alignment:"center",width:Math.min(400,Math.max(200,el.clientWidth||320))});
   },
   async signInGoogle(){
     if(S.modal==="join"&&S.form.fromLink&&S.form.name)lsSet("totofanta-pending-invite",S.form.name);  // l'invito sopravvive al passaggio da Google
@@ -448,7 +448,7 @@ const B=ONLINE?Online:Local;
    del browser cambiano schermata invece di uscire dal sito. Menu laterale, finestre e aiuti aggiungono un passo
    alla cronologia, così Indietro li chiude. Nessun ricaricamento: cambia solo la parte dopo "#".
    Gli indirizzi #lega=<nome> (inviti) e quelli di accesso di Supabase non vengono toccati. */
-const ROUTES=["home","pronostici","classifica","risultati","calendario","statistiche","impostazioni","profilo","lega","admin","leghe","create","regole","contatti"];
+const ROUTES=["home","pronostici","classifica","risultati","calendario","statistiche","profilo","lega","admin","leghe","create","regole","contatti"];
 const ROUTE_NAME={create:"crea",admin:"lega/admin",regole:"come-si-gioca"};
 function routeHash(){
   const sc=S.screen;if(!ROUTES.includes(sc)||sc==="home")return "#/";
@@ -761,7 +761,7 @@ const ACT={
     safe(async()=>{await B.setNickname(nick);S.nickEdit=null;toast("Nickname aggiornato")})},
   /* Invita amici (11/11): condivisione del telefono con il messaggio pronto; dove non c'è, il messaggio si copia */
   shareInvite:async()=>{const L=league();if(!L)return;const text=inviteText(L);
-    if(navigator.share){try{await navigator.share({title:`Unisciti a “${L.name}” su TotoFanta`,text});return}catch(e){if(e&&e.name==="AbortError")return}}
+    if(navigator.share){try{await navigator.share({title:`Unisciti a “${L.name}” su unoXdue`,text});return}catch(e){if(e&&e.name==="AbortError")return}}
     try{await navigator.clipboard.writeText(text);toast("Messaggio d'invito copiato: incollalo dove vuoi")}catch{prompt("Copia il messaggio d'invito:",text)}},
   copyMail:async()=>{try{await navigator.clipboard.writeText(CONTACT_EMAIL);toast("Indirizzo email copiato")}catch{prompt("Copia l'indirizzo email:",CONTACT_EMAIL)}},
   copyLink:async()=>{const L=league();if(!L)return;const url=inviteUrl(L);try{await navigator.clipboard.writeText(url);toast("Link d'invito copiato")}catch{prompt("Copia il link d'invito:",url)}},
@@ -798,7 +798,6 @@ const ACT={
     safe(async()=>{await B.deleteLeague();S.confirm=null;selectLeague(null);pickDefaultLeague();toast("Lega eliminata");go("home")})},
   // ---- calendario Serie A (pubblico) e pannello amministratore
   openStats:()=>{S.stats={data:null,lid:S.lid,err:""};if(S.screen!=="statistiche")go("statistiche");else render();B.myPicksAll().then(d=>{if(S.stats){S.stats.data=d;if(!d.some(x=>x.lid===S.stats.lid))S.stats.lid=d[0]?.lid||null;render()}}).catch(e=>{if(S.stats){S.stats.err=e.message||"Errore";render()}})},
-  theme:d=>{const v=["auto","light","dark"].includes(d.v)?d.v:"auto";try{localStorage.setItem("totofanta-theme",v)}catch{}if(window.applyTheme)applyTheme(v);render()},
   openCal:d=>{S.calN=+d.n||S.calN||nextCalendarRound();go("calendario")},
   calStep:d=>{S.calN=Math.min(38,Math.max(1,(S.calN||nextCalendarRound())+(+d.d)));render()},
   admStep:d=>{S.admN=Math.min(38,Math.max(1,(S.admN||adminDefaultRound())+(+d.d)));S.admEdit=null;S.formErr="";render()},
@@ -922,9 +921,9 @@ function render(){
   const recovery=ONLINE&&S.screen==="newpw"&&S.uid;
   if(ADMIN_PAGE)return renderAdminPage(needLogin);
   /* intestazione (8/11): logo solo in Home (con Pronostici) e nelle schede Classifica e Risultati; nelle altre pagine il loro nome */
-  const title=bareTitle()||({create:"Crea una lega",calendario:"Calendario",profilo:"Profilo",statistiche:"Statistiche",impostazioni:"Impostazioni",regole:"Come si gioca",contatti:"Contatti",leghe:"Le mie leghe",lega:"Lega",admin:"Pannello admin"}[S.screen])||"TotoFanta";
+  const title=bareTitle()||({create:"Crea una lega",calendario:"Calendario",profilo:"Profilo",statistiche:"Statistiche",regole:"Come si gioca",contatti:"Contatti",leghe:"Le mie leghe",lega:"Lega",admin:"Pannello admin"}[S.screen])||"unoXdue";
   const bare=needLogin||recovery||S.boot||!S.authReady;
-  const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",impostazioni:"home",regole:"home",contatti:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
+  const backTo={create:"home",leghe:"home",calendario:"home",statistiche:"home",regole:"home",contatti:"home",lega:S.prev==="leghe"?"leghe":"home",admin:"lega",profilo:"home"}[S.screen];
   const leftBtn=bare?"<span></span>":(backTo?`<button class="iconbtn" data-act="${S.screen==="regole"?"rulesBack":"go"}" data-s="${backTo}" aria-label="Indietro">${I.back}</button>`:`<button class="iconbtn" data-act="drawer" aria-label="Apri menu" aria-expanded="${S.drawer}">${I.menu}</button>`);
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
@@ -935,19 +934,18 @@ function render(){
   else if(S.screen==="profilo")body=vProfile();
   else if(S.screen==="calendario")body=vCalendar();
   else if(S.screen==="statistiche")body=vStats();
-  else if(S.screen==="impostazioni")body=vSettings();
   else if(S.screen==="regole")body=vRules();
   else if(S.screen==="contatti")body=vContacts();
   else if(!L)body=vNoLeague();
   else body=vLeagueScreen(L);
   const nav=!bare&&S.screen!=="create"?vNav():"";
-  const brand=title==="TotoFanta"?`<h1 class="brand" aria-label="TotoFanta"><span class="bt">TOTO</span><span class="bf">FANTA</span></h1>`:`<h1>${title}</h1>`;
+  const brand=title==="unoXdue"?`<h1 class="brand"><img src="img/unoxdue-scritta.svg" alt="unoXdue" width="1095" height="342"></h1>`:`<h1>${title}</h1>`;
   const meNick=myMember()?.nick||S.localUsers.find(u=>u.id===S.uid)?.name||S.email||"?";
   const rightBtn=bare||S.screen==="profilo"?"<span></span>":`<button class="avatar" data-act="openProfile" aria-label="Profilo">${esc((meNick.trim()[0]||"?").toUpperCase())}</button>`;
   /* su PC (8/11): menu laterale fisso al posto del menu a scomparsa e della barra in basso; vedi @media (min-width:1024px) */
   document.body.classList.toggle("hasside",!bare);
   document.body.classList.toggle("wide",!!L&&!bare&&["home","pronostici","classifica","risultati"].includes(S.screen));
-  app.innerHTML=`<header class="top${!bare&&title==="TotoFanta"?" brandscr":""}"><div class="col">${leftBtn}${brand}${rightBtn}</div></header>
+  app.innerHTML=`<header class="top${!bare&&title==="unoXdue"?" brandscr":""}"><div class="col">${leftBtn}${brand}${rightBtn}</div></header>
   ${bare?"":vSide()}<main class="col">${banners()}${body}</main>${nav}${!bare&&S.drawer?vDrawer():""}${!bare&&S.modal==="join"?vJoin():""}${!bare&&S.modal==="xfer"&&S.xfer?vXfer():""}${!bare&&S.modal==="xferLeave"&&S.xferLeave?vXferLeave():""}${S.help?vHelp():""}${S.leave?vLeave():""}${S.flash?`<div class="flash" role="status">${esc(S.flash)}</div>`:""}`;
   if(fid){const el=document.getElementById(fid);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(ss!=null)el.setSelectionRange(ss,se)}catch{}}}
   if(ONLINE&&document.getElementById("gsi-btn"))Online.mountGoogle();
@@ -959,7 +957,7 @@ function placeNextBar(){const bar=document.getElementById("next-bar");if(!bar)re
   if(S.nextScroll&&S.nextScroll.k===key)bar.scrollLeft=S.nextScroll.x;
   else{const first=bar.querySelector(".mini:not(.done)");bar.scrollLeft=first?first.offsetLeft-bar.offsetLeft-2:bar.scrollWidth}
   bar.addEventListener("scroll",()=>{S.nextScroll={k:key,x:bar.scrollLeft}},{passive:true})}
-function bareTitle(){return ONLINE&&S.authReady&&!S.uid?"TotoFanta":""}
+function bareTitle(){return ONLINE&&S.authReady&&!S.uid?"unoXdue":""}
 function renderAdminPage(needLogin){
   let body;
   if(S.boot||!S.authReady)body=`<div class="empty">Caricamento…</div>`;
@@ -1011,14 +1009,13 @@ function sideLinks(){return `
    <div class="grp">Serie A</div>
    <button class="dl" data-act="openCal">${I.cal}Calendario</button>
    <div class="grp">App</div>
-   <button class="dl" data-act="go" data-s="impostazioni">${I.cog}Impostazioni</button>
    <button class="dl" data-act="go" data-s="contatti">${I.mail}Contatti</button>`}
 /* menu laterale del PC: logo, profilo (in alto come sul telefono, 11/11), lega, sezioni della lega (con Pronostici), poi le voci del menu */
 function vSide(){
   const L=league();const me=myMember();const cur=S.screen==="admin"?"lega":S.screen;
   const it=(k,t,ic)=>`<button class="dl${cur===k?" cur":""}" data-act="go" data-s="${k}" ${cur===k?'aria-current="page"':""} ${!L&&k!=="home"?"disabled":""}>${ic}<span>${t}</span></button>`;
   const nm=me?.nick||S.localUsers.find(u=>u.id===S.uid)?.name||"Il tuo profilo";
-  return `<aside class="dside" aria-label="Menu laterale"><p class="sbrand" aria-hidden="true"><span class="bt">TOTO</span><span class="bf">FANTA</span></p>
+  return `<aside class="dside" aria-label="Menu laterale"><p class="sbrand"><img src="img/unoxdue-scritta.svg" alt="unoXdue" width="1095" height="342"></p>
   <button class="sme" data-act="openProfile"><span class="av" aria-hidden="true">${esc((nm.trim()[0]||"?").toUpperCase())}</span><span class="grow"><b>${esc(nm)}</b>${S.email?`<span class="small muted sem">${esc(S.email)}</span>`:""}</span><span class="spg">Profilo ›</span></button>
   ${leagueSwitch(L)}
   <nav>${it("home","Home",I.home)}${it("pronostici","Pronostici",I.check)}${it("classifica","Classifica",I.rank)}${it("risultati","Risultati",I.grid)}${sideLinks()}</nav>
@@ -1033,6 +1030,7 @@ function vHelp(){return `<div class="scrim" data-act="closeAll"></div><div class
 function vLogin(){
   const f=S.authForm;const up=f.mode==="signup";
   return `<form class="card" data-submit="login" novalidate>
+   <img class="loginmark" src="img/unoxdue-icona.svg" alt="" width="88" height="88">
    <h2 class="center">${up&&EMAIL_LOGIN?"Crea il tuo account":"Login"}</h2>
    ${CFG.googleClientId&&!S.gsiFallback?`<div id="gsi-btn" class="gsi"></div>`:`<button class="btn block gbtn" type="button" data-act="google" ${S.busy?"disabled":""}><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.3 5.7c4.3-3.9 7-9.8 7-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.3-5.7c-2.2 1.5-5 2.3-8.6 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>Continua con Google</button>`}
    ${EMAIL_LOGIN?`<div class="sep"><span>oppure con email</span></div>`:""}
@@ -1044,7 +1042,7 @@ function vLogin(){
    ${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}
    <button class="btn block" type="submit" ${S.busy?"disabled":""}>${S.busy?"Attendi…":up?"Registrati":"Accedi"}</button>
    ${ADMIN_PAGE?"":up?`<button class="btn ghost" type="button" data-act="authMode" data-m="login">Hai già un account? Accedi</button>`
-       :`<button class="btn ghost" type="button" data-act="authMode" data-m="signup">Non hai un account? Registrati</button><button class="btn ghost sm" type="button" data-act="forgot">Password dimenticata?</button>`}`:`${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}<p class="center small muted" style="font-family:var(--f-ui)">Accedi con il tuo account Google: se è la prima volta, l'account Totofanta si crea in automatico.</p>`}
+       :`<button class="btn ghost" type="button" data-act="authMode" data-m="signup">Non hai un account? Registrati</button><button class="btn ghost sm" type="button" data-act="forgot">Password dimenticata?</button>`}`:`${S.formErr?`<p class="err">${esc(S.formErr)}</p>`:""}<p class="center small muted" style="font-family:var(--f-ui)">Accedi con il tuo account Google: se è la prima volta, l'account unoXdue si crea in automatico.</p>`}
   </form>
   ${S.modal==="join"?`<p class="center small muted" style="font-family:var(--f-ui)">Dopo l'accesso potrai entrare nella lega <b>${esc(S.form.name||"")}</b>.</p>`:""}
   <p class="center small muted" style="font-family:var(--f-ui)">Accedendo accetti i <a href="termini.html">Termini</a> e l'<a href="privacy.html">informativa sulla privacy</a>.</p>`;
@@ -1315,7 +1313,7 @@ const CONTACT_EMAIL="totofanta.admin@gmail.com";
 function vContacts(){
   return `<section class="card"><h3>Scrivici</h3><p class="small" style="font-family:var(--f-ui)">Per segnalare un problema, proporre un'idea o chiedere aiuto con la tua lega, scrivi all'amministratore del sito.</p>
    <div class="mailrow">${I.mail}<b>${CONTACT_EMAIL}</b></div>
-   <a class="btn wide sharebtn" href="mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("TotoFanta")}">${I.mail}Scrivi un'email</a>
+   <a class="btn wide sharebtn" href="mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("unoXdue")}">${I.mail}Scrivi un'email</a>
    <button class="btn wide sec" data-act="copyMail">Copia indirizzo</button>
    <p class="small muted" style="font-family:var(--f-ui)">Se segnali un problema, indica la lega, la schermata e, se puoi, allega uno screenshot.</p></section>`;
 }
@@ -1332,19 +1330,6 @@ function vRules(){
   +sec("6 · Partite rinviate",`<ul><li>Se una partita viene rinviata, si aspetta il recupero: il suo pronostico resta <b>modificabile fino al suo nuovo fischio d'inizio</b> e la sua quota continua ad aggiornarsi.</li><li>Le altre partite della giornata restano chiuse e si giocano normalmente.</li></ul>`)
   +`<p class="small muted" style="font-family:var(--f-ui)">È un gioco tra amici, gratuito e senza soldi in palio: non è una scommessa.</p>`;
 }
-/* ---- Impostazioni (7/11): per ora il tema; la scelta resta in questo browser ---- */
-function curTheme(){try{return localStorage.getItem("totofanta-theme")||"auto"}catch{return "auto"}}
-function vSettings(){
-  /* sotto ogni scelta un simbolo: mezzo cerchio pieno (automatico, segue il dispositivo), sole, luna */
-  const ic={
-    auto:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></svg>`,
-    light:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.3M12 19.2v2.3M2.5 12h2.3M19.2 12h2.3M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>`,
-    dark:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>`};
-  const t=curTheme();const opt=(v,l)=>`<button type="button" class="themeopt" role="radio" aria-checked="${t===v}" data-act="theme" data-v="${v}"><b>${l}</b>${ic[v]}</button>`;
-  return `<section class="card"><h3>Aspetto</h3><div class="themegrp" role="radiogroup" aria-label="Tema">
-   ${opt("auto","Automatico")}${opt("light","Chiaro")}${opt("dark","Scuro")}</div></section>`;
-}
-
 /* ---- Classifica (5.1) ---- */
 function vStandings(L){
   const rows=computeStandings(L,S.members,S.rounds,S.picks);
@@ -1374,7 +1359,7 @@ function mpCard(rows,cls){
 /* testo dell'invito: lega, link, password (solo privata), giornata di partenza e scadenza delle iscrizioni */
 function inviteText(L){const pw=L.type==="private"?S.leaguePw[L._id]:null;
   const ks=fixturesOf(L.startRound).filter(f=>!f.postponed&&f.kickoff).map(f=>Date.parse(f.kickoff));const k=ks.length?Math.min(...ks):null;
-  return `Ti invito nella mia lega di TotoFanta: “${L.name}” ⚽\n\nEntra da qui 👉 ${inviteUrl(L)}`+(pw?`\nPassword: ${pw}`:"")
+  return `Ti invito nella mia lega di unoXdue: “${L.name}” ⚽\n\nEntra da qui 👉 ${inviteUrl(L)}`+(pw?`\nPassword: ${pw}`:"")
     +`\n\nSi parte ${[8,11].includes(L.startRound)?"dall'":"dalla "}${L.startRound}ª giornata`+(k?`: iscriviti entro ${fmtDow(k)} alle ${fmtTime(k)}.`:".")}
 function vInfo(L){
   const admin=isAdmin();const pend=S.members.filter(m=>m.status==="pending");const pw=S.leaguePw[L._id];
