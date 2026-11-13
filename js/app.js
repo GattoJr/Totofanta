@@ -1228,7 +1228,7 @@ function vPicks(L){
   const open=list.filter(x=>!roundDone(x));
   const r=(S.roundSel!=null&&open.find(x=>x.n===S.roundSel))||currentRound();
   const vis=roundVisible(r);const st=roundStatus(r,L);
-  const fk=firstKick(r);const sub=roundVisible(r)&&fk&&!roundLocked(r)?`Chiude ${fmtDow(fk)} alle ${fmtTime(fk)}`:roundLocked(r)?(roundAnyOpen(r)?"Aperte solo le partite rinviate":"Pronostici chiusi"):"";
+  const fk=firstKick(r);const sub=roundVisible(r)&&fk&&!roundLocked(r)?`Hai tempo fino a ${fmtDow(fk)} alle ${fmtTime(fk)}`:roundLocked(r)?(roundAnyOpen(r)?"Aperte solo le partite rinviate":"Pronostici chiusi"):"";
   let html=`<div class="row pickhead"><button class="iconbtn" data-act="go" data-s="home" aria-label="Indietro alla Home">${I.back}</button><div class="grow phead"><h2 class="disp">${r.n}ª giornata</h2>${sub?`<span class="small muted">${sub}</span>`:""}</div><span class="chip ${st.c}">${st.t}</span></div>`;
   if(open.length>1)html+=`<div class="rounds" role="group" aria-label="Scegli la giornata">${open.map(x=>`<button class="rchip" aria-pressed="${x.n===r.n}" data-act="round" data-n="${x.n}">${x.n}ª</button>`).join("")}</div>`;
   if(!vis){const done=r.matches.every(m=>matchLocked(r,m));return html+`<section class="card"><p class="cta-title">${done?"Giornata non giocata in questa lega":"Quote in arrivo"}</p><p class="count">${done?"Le quote di questa giornata non sono state pubblicate.":"Le quote vengono pubblicate prima della giornata."}</p></section>`}
