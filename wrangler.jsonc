@@ -1,5 +1,7 @@
 // Configurazione Cloudflare: sito statico, nessun codice lato server.
 // I file esclusi dalla pubblicazione sono elencati in .assetsignore.
+// Dominio unoxdue.it (e www.) collegato dal pannello Cloudflare › totofanta › Domains & Routes:
+// non aggiungere qui una chiave "routes", altrimenti a ogni deploy sostituirebbe quelli del pannello.
 {
   "name": "totofanta",
   "compatibility_date": "2026-06-01",

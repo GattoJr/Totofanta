@@ -32,7 +32,7 @@ supabase/reset.sql    azzera il database (cancella tutto lo schema public)
 3. New query: incolla `supabase/calendario-2026-27.sql` › Run.
 4. Amministratore del sito:
    `insert into public.site_admins select id from auth.users where email = 'TUA-EMAIL';`
-5. Authentication › URL Configuration: Site URL `https://totofanta.tototips.workers.dev/`; in Redirect URLs `https://totofanta.tototips.workers.dev/**` (copre anche `admin`).
+5. Authentication › URL Configuration: Site URL `https://unoxdue.it/`; in Redirect URLs `https://unoxdue.it/**` (copre anche `admin`).
 6. Per i test: Authentication › Sign In / Providers › Email › disattiva *Confirm email* (il servizio email gratuito di Supabase invia pochissime mail all'ora).
 
 Regole principali garantite dal database:
@@ -58,4 +58,4 @@ Con `js/config.js` compilato il sito usa Supabase (login con email e password, d
 
 ## Pubblicazione (dall'11/11/2026)
 
-Il sito è servito da Cloudflare Workers (static assets): https://totofanta.tototips.workers.dev — si pubblica da solo a ogni push su `main`. Configurazione in `wrangler.jsonc`, file esclusi in `.assetsignore`, intestazioni di sicurezza in `_headers`. Il vecchio indirizzo GitHub Pages (ramo `gh-pages`) rimanda al nuovo, conservando i link d'invito (`#lega=…`).
+Il sito è servito da Cloudflare Workers (static assets) sul dominio https://unoxdue.it (custom domain del Worker `totofanta`, gestito dal pannello Cloudflare) — si pubblica da solo a ogni push su `main`. Configurazione in `wrangler.jsonc`, file esclusi in `.assetsignore`, intestazioni di sicurezza in `_headers`. I vecchi indirizzi (https://totofanta.tototips.workers.dev, www.unoxdue.it e GitHub Pages dal ramo `gh-pages`) rimandano a https://unoxdue.it tramite `js/dominio.js` / `redirect.js`, conservando i link d'invito (`#lega=…`).
