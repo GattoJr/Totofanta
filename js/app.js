@@ -1245,7 +1245,7 @@ function vPicks(L){
     return `<section class="card match"><div class="mvs"><span class="mside">${crest(m.home,"md")}<span class="tn">${esc(m.home)}</span></span><span class="mmid">${mid}</span><span class="mside">${crest(m.away,"md")}<span class="tn">${esc(m.away)}</span></span></div><div class="odds3">${btn("1")}${btn("X")}${btn("2")}</div>${verdict?`<div class="verdict">${verdict}</div>`:""}</section>`}).join("")+`</div><div class="paside">`;
   const done=Object.keys(mine).filter(k=>r.matches.some(m=>m.id===k)).length;
   html+=`<section class="card"><div class="summary${roundLocked(r)?"":" two"}"><div><b>${done}/${r.matches.length}</b><span>Pronostici</span></div>${roundLocked(r)?`<div><b>${f2(sc.pts)}</b><span>Punti fatti</span></div><div><b>${f2(potential)}</b><span>Ancora in palio</span></div>`:`<div><b>${f2(potential)}</b><span>Punteggio massimo</span></div>`}</div>
-  <p class="small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi cambiarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
+  <p class="small muted" style="font-family:var(--f-ui)">Premi <b>Salva</b> per confermare i pronostici. Puoi modificarli fino al fischio d'inizio della prima partita della giornata.</p></section>`;
   /* Esporta (12/11): spento finché la schedina non è completa e salvata; toccandolo compare un messaggio */
   if(canCopy){const ready=exportReady(r);html+=`<button class="btn sec block cpbtn${ready?"":" off"}" aria-disabled="${!ready}" data-act="copyOpen" data-mode="export" data-r="${r._id}">${I.cpout}Esporta in un'altra lega</button>`}
   if(anyOpen&&dirty){const first=!Object.keys(savedPicks(r._id)).length;
