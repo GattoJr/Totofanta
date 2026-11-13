@@ -238,7 +238,8 @@ tr.me td{background:var(--blue-soft)}
 .gbtn svg{width:20px;height:20px;flex:none}
 .sep{display:flex;align-items:center;gap:10px;color:var(--muted);font-family:var(--f-ui);font-size:13px}
 .sep::before,.sep::after{content:"";flex:1;border-top:1px solid var(--line)}
-.gsi{display:flex;justify-content:center;min-height:44px}
+.gsi{display:flex;justify-content:center;min-height:44px;color-scheme:light} /* il sito è scuro: senza questo il browser dipinge di bianco lo sfondo dell iframe di Google */
+.gsi iframe{color-scheme:light;background:transparent}
 
 /* pronostici: barra Salva e conferma temporanea */
 .savebar{position:sticky;bottom:calc(var(--nav-h) + 10px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border-radius:var(--r);box-shadow:0 4px 14px rgba(0,0,0,.22);padding:10px 12px;font-family:var(--f-ui)}
